@@ -1,0 +1,290 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
+import { Plus, Filter, Upload, Download, Archive, Star, Search, MoreHorizontal, X, BarChart3 } from 'lucide-react';
+import { PageHeader } from '@/components/layout/page-header';
+import { Card } from '@/components/primitives/card';
+import { Button } from '@/components/primitives/button';
+import { Badge } from '@/components/primitives/badge';
+import { Field, Input, Select } from '@/components/primitives/field';
+import { DataTable, type Column } from '@/components/data/data-table';
+import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
+import { CsvImportModal } from '@/components/product/csv-import-modal';
+import { Money } from '@/components/shared/format';
+import { useListProductsQuery, useBulkUpdateProductsMutation, useArchiveProductMutation, useCreateProductMutation } from '@/lib/api';
+import { useToast } from '@/lib/hooks/use-toast';
+import { catName, brandName, productDisplayStatus, toCSV, downloadCSV } from '@/lib/utils';
+import type { Product } from '@/lib/types';
+import clsx from 'clsx';
+
+export default function ProductsPage() {
+  const router = useRouter();
+  const { data: products = [], isLoading, isError, refetch } = useListProductsQuery();
+  const [bulkUpdate, { isLoading: bulking }] = useBulkUpdateProductsMutation();
+  const [archive] = useArchiveProductMutation();
+  const [createProduct] = useCreateProductMutation();
+  const toast = useToast();
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'draft' | 'archived'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [csvOpen, setCsvOpen] = useState(false);
+
+  const filtered = useMemo(() => {
+    return products.filter(p => {
+      if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+      if (categoryFilter && p.categoryId !== categoryFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (!p.name.toLowerCase().includes(q) && !p.sku.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [products, statusFilter, categoryFilter, search]);
+
+  const statusCounts = useMemo(() => ({
+    all: products.length,
+    active: products.filter(p => p.status === 'active').length,
+    draft: products.filter(p => p.status === 'draft').length,
+    archived: products.filter(p => p.status === 'archived').length,
+  }), [products]);
+
+  const handleSelect = (id: string, checked: boolean) => {
+    setSelected(s => {
+      const n = new Set(s);
+      if (checked) n.add(id); else n.delete(id);
+      return n;
+    });
+  };
+  const handleSelectAll = (checked: boolean) => {
+    setSelected(checked ? new Set(filtered.map(p => p.id)) : new Set());
+  };
+
+  const bulkArchive = async () => {
+    if (!confirm(`Archive ${selected.size} product${selected.size === 1 ? '' : 's'}?`)) return;
+    await bulkUpdate({ ids: Array.from(selected), patch: { status: 'archived' } });
+    toast.success(`${selected.size} products archived`);
+    setSelected(new Set());
+  };
+  const bulkFeature = async () => {
+    await bulkUpdate({ ids: Array.from(selected), patch: { isFeatured: true } });
+    toast.success(`${selected.size} products featured`);
+    setSelected(new Set());
+  };
+  const bulkPublish = async () => {
+    await bulkUpdate({ ids: Array.from(selected), patch: { status: 'active' } });
+    toast.success(`${selected.size} products published`);
+    setSelected(new Set());
+  };
+
+  const exportCsv = () => {
+    const rows = (selected.size ? filtered.filter(p => selected.has(p.id)) : filtered).map(p => ({
+      sku: p.sku, name: p.name, basePrice: p.basePrice, status: p.status,
+      stock: p.stock ?? '', categoryId: p.categoryId ?? '', salesCount: p.salesCount,
+    }));
+    const csv = toCSV(rows, [
+      { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Name' },
+      { key: 'basePrice', label: 'Base price' }, { key: 'status', label: 'Status' },
+      { key: 'stock', label: 'Stock' }, { key: 'categoryId', label: 'Category' },
+      { key: 'salesCount', label: 'Lifetime sales' },
+    ]);
+    downloadCSV(`products-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    toast.success(`Exported ${rows.length} products`);
+  };
+
+  const handleImport = async (rows: Record<string, string>[]) => {
+    let count = 0;
+    for (const r of rows) {
+      if (!r.name || !r.basePrice) continue;
+      await createProduct({
+        name: r.name,
+        basePrice: Number(r.basePrice),
+        compareAtPrice: r.compareAtPrice ? Number(r.compareAtPrice) : undefined,
+        shortDescription: r.shortDescription,
+        description: r.description,
+        stockOnHand: r.stockOnHand,
+        status: 'draft',
+      } as any);
+      count++;
+    }
+    toast.success(`Imported ${count} products as drafts`);
+  };
+
+  const columns: Column<Product>[] = [
+    {
+      key: 'name', header: 'Product', className: 'min-w-[280px]',
+      render: (p) => (
+        <Link href={`/products/${p.id}/edit`} className="flex items-center gap-3 group">
+          <div className="w-10 h-10 rounded-md overflow-hidden bg-stone-100 grid place-items-center shrink-0 ring-1 ring-stone-200">
+            {p.images?.[0]?.url
+              ? <Image src={p.images[0].url} alt={p.name} width={40} height={40} className="w-full h-full object-cover" unoptimized />
+              : <span className="font-serif text-base text-stone-500">{p.initial ?? p.name[0]}</span>}
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm text-stone-900 font-medium truncate group-hover:text-brand-700">{p.name}</div>
+            <div className="text-xs text-stone-500 font-mono">{p.sku}</div>
+          </div>
+        </Link>
+      ),
+    },
+    { key: 'category', header: 'Category', render: (p) => <span className="text-stone-600">{catName(p.categoryId)}</span> },
+    { key: 'brand',    header: 'Brand',    render: (p) => <span className="text-stone-600">{brandName(p.brandId)}</span> },
+    {
+      key: 'price', header: 'Price', className: 'text-right',
+      render: (p) => (
+        <div className="text-right">
+          <div className="font-medium tabular-nums"><Money value={p.basePrice} currency={p.currency} /></div>
+          {p.compareAtPrice && <div className="text-xs text-stone-400 line-through tabular-nums"><Money value={p.compareAtPrice} currency={p.currency} /></div>}
+        </div>
+      ),
+    },
+    {
+      key: 'stock', header: 'Stock', className: 'text-right',
+      render: (p) => (
+        <span className={clsx('tabular-nums text-sm', p.stock === 0 ? 'text-red-600 font-medium' : p.stock !== null && p.stock <= 5 ? 'text-amber-700' : 'text-stone-700')}>
+          {p.stock ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'sales', header: 'Sales', className: 'text-right',
+      render: (p) => <span className="tabular-nums text-sm text-stone-600">{p.salesCount}</span>,
+    },
+    {
+      key: 'status', header: 'Status',
+      render: (p) => {
+        const s = productDisplayStatus(p);
+        return (
+          <div className="flex items-center gap-2">
+            <Badge variant={s.variant}>{s.label}</Badge>
+            {p.isFeatured && <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />}
+          </div>
+        );
+      },
+    },
+    { key: 'updated', header: 'Updated', render: (p) => <span className="text-xs text-stone-500">{p.updatedAt}</span> },
+    {
+      key: 'actions', header: '', className: 'w-12',
+      render: (p) => (
+        <button
+          className="text-stone-400 hover:text-stone-700 p-1"
+          onClick={(e) => { e.stopPropagation(); router.push(`/products/${p.id}/analytics`); }}
+          title="Open analytics"
+        >
+          <BarChart3 className="w-4 h-4" />
+        </button>
+      ),
+    },
+  ];
+
+  if (isError) return <ErrorState onRetry={refetch} />;
+
+  return (
+    <>
+      <PageHeader
+        title="Products"
+        subtitle={`${products.length} total · ${statusCounts.active} active`}
+        actions={
+          <>
+            <Button onClick={() => setCsvOpen(true)}><Upload className="w-3.5 h-3.5" /> Import CSV</Button>
+            <Button onClick={exportCsv}><Download className="w-3.5 h-3.5" /> Export</Button>
+            <Button variant="primary" onClick={() => router.push('/products/new')}>
+              <Plus className="w-3.5 h-3.5" /> Add product
+            </Button>
+          </>
+        }
+      />
+
+      {/* Filter bar */}
+      <Card className="mb-4 p-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1 p-1 bg-stone-100 rounded-md">
+            {([
+              { v: 'all', label: 'All', count: statusCounts.all },
+              { v: 'active', label: 'Active', count: statusCounts.active },
+              { v: 'draft', label: 'Drafts', count: statusCounts.draft },
+              { v: 'archived', label: 'Archived', count: statusCounts.archived },
+            ] as const).map(opt => (
+              <button
+                key={opt.v}
+                onClick={() => setStatusFilter(opt.v)}
+                className={clsx(
+                  'px-2.5 py-1 rounded text-xs transition-colors flex items-center gap-1.5',
+                  statusFilter === opt.v ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
+                )}
+              >
+                {opt.label}
+                <span className="text-stone-400">{opt.count}</span>
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name or SKU…"
+              className="!pl-9"
+            />
+          </div>
+          <Select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="!w-auto">
+            <option value="">All categories</option>
+            <option value="cat-apparel">Apparel</option>
+            <option value="cat-textiles">Textiles</option>
+            <option value="cat-accessories">Accessories</option>
+            <option value="cat-footwear">Footwear</option>
+            <option value="cat-bags">Bags</option>
+          </Select>
+        </div>
+      </Card>
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <Card className="mb-4 p-3 bg-brand-50/40 border-brand-200">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="text-sm text-brand-900 font-medium">
+              {selected.size} selected
+            </div>
+            <div className="h-4 w-px bg-brand-200" />
+            <Button onClick={bulkPublish} disabled={bulking}>Publish</Button>
+            <Button onClick={bulkFeature} disabled={bulking}><Star className="w-3.5 h-3.5" /> Feature</Button>
+            <Button onClick={exportCsv}><Download className="w-3.5 h-3.5" /> Export selected</Button>
+            <Button variant="danger-ghost" onClick={bulkArchive} disabled={bulking}><Archive className="w-3.5 h-3.5" /> Archive</Button>
+            <button onClick={() => setSelected(new Set())} className="ml-auto text-stone-500 hover:text-stone-900 p-1">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        {isLoading ? (
+          <TableSkeleton rows={6} columns={8} />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            title="No products found"
+            description={search || statusFilter !== 'all' || categoryFilter ? 'Try adjusting your filters.' : 'Start building your catalog by adding your first product.'}
+            action={<Button variant="primary" onClick={() => router.push('/products/new')}><Plus className="w-3.5 h-3.5" /> Add product</Button>}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filtered}
+            rowKey={p => p.id}
+            selectable
+            selectedIds={selected}
+            onSelect={handleSelect}
+            onSelectAll={handleSelectAll}
+            onRowClick={(p) => router.push(`/products/${p.id}/edit`)}
+          />
+        )}
+      </Card>
+
+      <CsvImportModal open={csvOpen} onClose={() => setCsvOpen(false)} onImport={handleImport} />
+    </>
+  );
+}

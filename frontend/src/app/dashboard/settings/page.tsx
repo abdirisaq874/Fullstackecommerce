@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Button, Card, CardHeader, Input } from "../../../../components/ui";
+import { Button, Card, CardHeader, Input } from "../../../components/ui";
 
 interface SettingsSection {
   title: string;

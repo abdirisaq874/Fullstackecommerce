@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import { useGetCouponsQuery, useCreateCouponMutation } from "../../../../store/api/endpointsApi";
-import { Button, Card, CardHeader, DataTable, StatusBadge, Input, Select, TableSkeleton, EmptyState } from "../../../../components/ui";
+import { useGetCouponsQuery, useCreateCouponMutation } from "../../../store/api/endpointsApi";
+import { Button, Card, CardHeader, DataTable, StatusBadge, Input, Select, TableSkeleton, EmptyState } from "../../../components/ui";
 
 export default function PromotionsPage() {
   const { data: coupons, isLoading } = useGetCouponsQuery();

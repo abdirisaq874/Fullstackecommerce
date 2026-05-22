@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { useGetOrdersQuery, useUpdateOrderStatusMutation } from "../../../../store/api/endpointsApi";
-import { Button, Card, CardHeader, DataTable, StatusBadge, Pagination, TableSkeleton, EmptyState } from "../../../../components/ui";
-import { formatCurrency, formatDate, formatRelativeTime } from "../../../../lib/utils";
-import type { Order, OrderStatus } from "../../../../types";
+import { useGetOrdersQuery, useUpdateOrderStatusMutation } from "../../../store/api/endpointsApi";
+import { Button, Card, CardHeader, DataTable, StatusBadge, Pagination, TableSkeleton, EmptyState } from "../../../components/ui";
+import { formatCurrency, formatDate, formatRelativeTime } from "../../../lib/utils";
+import type { Order, OrderStatus } from "../../../types";
 
 const statusFilters: { label: string; value: OrderStatus | "all" }[] = [
   { label: "All", value: "all" },

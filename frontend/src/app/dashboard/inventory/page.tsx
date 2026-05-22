@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
-import { useSearchProductsQuery } from "../../../../store/api/productsApi";
-import { useGetProductInventoryQuery, useAdjustStockMutation } from "../../../../store/api/endpointsApi";
-import { Button, Card, CardHeader, StatCard, Input, StatusBadge, DataTable, TableSkeleton, EmptyState } from "../../../../components/ui";
+import { useSearchProductsQuery } from "../../../store/api/productsApi";
+import { useGetProductInventoryQuery, useAdjustStockMutation } from "../../../store/api/endpointsApi";
+import { Button, Card, CardHeader, StatCard, Input, StatusBadge, DataTable, TableSkeleton, EmptyState } from "../../../components/ui";
 
 export default function InventoryPage() {
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);

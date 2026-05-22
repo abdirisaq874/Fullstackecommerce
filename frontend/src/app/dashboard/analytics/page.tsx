@@ -1,7 +1,7 @@
 "use client";
-import { useGetDashboardStatsQuery, useGetRevenueChartQuery, useGetOrdersByStatusQuery } from "../../../../store/api/endpointsApi";
-import { Card, CardHeader, StatCard, Skeleton } from "../../../../components/ui";
-import { formatCurrency } from "../../../../lib/utils";
+import { useGetDashboardStatsQuery, useGetRevenueChartQuery, useGetOrdersByStatusQuery } from "../../../store/api/endpointsApi";
+import { Card, CardHeader, StatCard, Skeleton } from "../../../components/ui";
+import { formatCurrency } from "../../../lib/utils";
 
 export default function AnalyticsPage() {
   const { data: stats, isLoading: statsLoading } = useGetDashboardStatsQuery();

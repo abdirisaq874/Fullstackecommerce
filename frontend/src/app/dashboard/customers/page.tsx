@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
-import { useGetCustomersQuery } from "../../../../store/api/endpointsApi";
-import { Button, DataTable, StatusBadge, TableSkeleton, Pagination, EmptyState } from "../../../../components/ui";
-import { formatCurrency, formatDate } from "../../../../lib/utils";
-import type { User } from "../../../../types";
+import { useGetCustomersQuery } from "../../../store/api/endpointsApi";
+import { Button, DataTable, StatusBadge, TableSkeleton, Pagination, EmptyState } from "../../../components/ui";
+import { formatCurrency, formatDate } from "../../../lib/utils";
+import type { User } from "../../../types";
 
 export default function CustomersPage() {
   const [page, setPage] = useState(1);

@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { useSearchProductsQuery } from "../../../../store/api/productsApi";
-import { Button, DataTable, StatusBadge, StatCard, TableSkeleton, Pagination, EmptyState } from "../../../../components/ui";
-import { formatCurrency } from "../../../../lib/utils";
-import type { Product, ProductStatus } from "../../../../types";
+import { useSearchProductsQuery } from "../../../store/api/productsApi";
+import { Button, DataTable, StatusBadge, StatCard, TableSkeleton, Pagination, EmptyState } from "../../../components/ui";
+import { formatCurrency } from "../../../lib/utils";
+import type { Product, ProductStatus } from "../../../types";
 
 const statusFilters: { label: string; value: ProductStatus | "all" }[] = [
   { label: "All", value: "all" },

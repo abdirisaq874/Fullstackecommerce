@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
-import { useGetDashboardStatsQuery, useGetRevenueChartQuery } from "../../../store/api/endpointsApi";
-import { StatCard, Card, CardHeader, StatusBadge, Skeleton, Button } from "../../../components/ui";
-import { formatCurrency, formatRelativeTime } from "../../../lib/utils";
+import { useGetDashboardStatsQuery, useGetRevenueChartQuery } from "../../store/api/endpointsApi";
+import { StatCard, Card, CardHeader, StatusBadge, Skeleton, Button } from "../../components/ui";
+import { formatCurrency, formatRelativeTime } from "../../lib/utils";
 
 export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useGetDashboardStatsQuery();
