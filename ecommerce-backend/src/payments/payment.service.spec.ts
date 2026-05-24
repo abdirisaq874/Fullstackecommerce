@@ -5,6 +5,8 @@ import { BadRequestException } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { Payment } from './schemas/payment.schema';
 import { EventBusService } from '../shared/events/event-bus.service';
+import { Order } from '../orders/schemas/order.schema';
+import * as crypto from 'crypto';
 
 // Mock Stripe — must handle both default and named exports
 const mockStripeInstance = {
@@ -30,6 +32,7 @@ jest.mock('stripe', () => {
 describe('PaymentService', () => {
   let service: PaymentService;
   let paymentModel: any;
+  let orderModel: any;
   let eventBus: any;
 
   const mockPayment = {
@@ -43,9 +46,22 @@ describe('PaymentService', () => {
   };
 
   const mockPaymentModel = {
-    create: jest.fn().mockResolvedValue(mockPayment),
     findOne: jest.fn(),
     findOneAndUpdate: jest.fn(),
+  };
+
+  const mockOrder = {
+    _id: { toString: () => '607f1f77bcf86cd799439022' },
+    userId: { toString: () => 'u1' },
+    total: 99.99,
+    currency: 'USD',
+    status: 'pending',
+    items: [{ variantSku: 'sku1', productId: { toString: () => 'p1' }, quantity: 1 }],
+  };
+
+  const mockOrderModel = {
+    findById: jest.fn(),
+    updateOne: jest.fn().mockResolvedValue({}),
   };
 
   const mockConfigService = {
@@ -67,52 +83,52 @@ describe('PaymentService', () => {
       providers: [
         PaymentService,
         { provide: getModelToken(Payment.name), useValue: mockPaymentModel },
+        { provide: getModelToken(Order.name), useValue: mockOrderModel },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: EventBusService, useValue: mockEventBus },
       ],
     }).compile();
 
     service = module.get<PaymentService>(PaymentService);
+    orderModel = module.get(getModelToken(Order.name));
     jest.clearAllMocks();
   });
 
   describe('createPaymentIntent', () => {
     it('should create a Stripe payment intent and store in DB', async () => {
-      const result = await service.createPaymentIntent('607f1f77bcf86cd799439022', 99.99, 'usd');
+      mockOrderModel.findById.mockResolvedValue(mockOrder);
+      mockPaymentModel.findOneAndUpdate.mockResolvedValue(mockPayment);
+
+      const result = await service.createPaymentIntent('607f1f77bcf86cd799439022', 'u1', 'customer');
 
       expect(result).toHaveProperty('clientSecret');
       expect(result).toHaveProperty('paymentId');
-      expect(mockPaymentModel.create).toHaveBeenCalledWith(
+      expect(mockStripeInstance.paymentIntents.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          amount: 99.99,
+          amount: 9999,
           currency: 'usd',
-          status: 'processing',
+          metadata: expect.objectContaining({ orderId: '607f1f77bcf86cd799439022' }),
         }),
+        expect.any(Object),
       );
+      expect(mockPaymentModel.findOneAndUpdate).toHaveBeenCalled();
       expect(mockEventBus.emit).toHaveBeenCalledWith('payment.processing', expect.any(Object));
     });
 
-    it('should generate deterministic idempotency key for same order+amount+currency', async () => {
-      await service.createPaymentIntent('607f1f77bcf86cd799439022', 99.99, 'usd');
-      const firstCall = mockPaymentModel.create.mock.calls[0][0];
+    it('should use deterministic idempotency key based on server-side order total', async () => {
+      mockOrderModel.findById.mockResolvedValue(mockOrder);
+      mockPaymentModel.findOneAndUpdate.mockResolvedValue(mockPayment);
 
-      jest.clearAllMocks();
-      await service.createPaymentIntent('607f1f77bcf86cd799439022', 99.99, 'usd');
-      const secondCall = mockPaymentModel.create.mock.calls[0][0];
+      await service.createPaymentIntent('607f1f77bcf86cd799439022', 'u1', 'customer');
 
-      // Same inputs should produce the same idempotency key
-      expect(firstCall.idempotencyKey).toBe(secondCall.idempotencyKey);
-    });
+      const expectedKey = crypto
+        .createHash('sha256')
+        .update('607f1f77bcf86cd799439022:99.99:usd')
+        .digest('hex')
+        .slice(0, 32);
 
-    it('should generate different idempotency keys for different amounts', async () => {
-      await service.createPaymentIntent('607f1f77bcf86cd799439022', 99.99, 'usd');
-      const firstKey = mockPaymentModel.create.mock.calls[0][0].idempotencyKey;
-
-      jest.clearAllMocks();
-      await service.createPaymentIntent('607f1f77bcf86cd799439022', 50.00, 'usd');
-      const secondKey = mockPaymentModel.create.mock.calls[0][0].idempotencyKey;
-
-      expect(firstKey).not.toBe(secondKey);
+      const stripeOptions = mockStripeInstance.paymentIntents.create.mock.calls[0][1];
+      expect(stripeOptions).toEqual({ idempotencyKey: expectedKey });
     });
   });
 
@@ -124,6 +140,7 @@ describe('PaymentService', () => {
         amount: 99.99,
         save: jest.fn().mockResolvedValue(true),
       });
+      mockOrderModel.findById.mockResolvedValue(mockOrder);
 
       const result = await service.processRefund('607f1f77bcf86cd799439022');
 
@@ -139,6 +156,7 @@ describe('PaymentService', () => {
         amount: 99.99,
         save: jest.fn().mockResolvedValue(true),
       });
+      mockOrderModel.findById.mockResolvedValue(mockOrder);
 
       const result = await service.processRefund('607f1f77bcf86cd799439022', 25.00);
 

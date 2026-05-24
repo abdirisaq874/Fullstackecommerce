@@ -39,4 +39,24 @@ export class InventoryEventsListener {
     this.logger.log(`Releasing stock for failed payment ${payload.orderId}`);
     await this.inventoryService.release(payload.items, payload.orderId);
   }
+
+  @OnEvent('order.cancelled')
+  async handleOrderCancelled(payload: {
+    orderId: string;
+    items: ReserveItem[];
+  }) {
+    this.logger.log(`Releasing stock for cancelled order ${payload.orderId}`);
+    await this.inventoryService.release(payload.items, payload.orderId);
+  }
+
+  @OnEvent('refund.processed')
+  async handleRefundProcessed(payload: {
+    orderId: string;
+    items: ReserveItem[];
+    isFullRefund?: boolean;
+  }) {
+    if (!payload.isFullRefund) return;
+    this.logger.log(`Restocking items for refunded order ${payload.orderId}`);
+    await this.inventoryService.restock(payload.items, payload.orderId);
+  }
 }

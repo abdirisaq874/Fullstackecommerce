@@ -13,6 +13,7 @@ export class Payment {
   @Prop({ unique: true }) idempotencyKey: string;
   @Prop({ required: true, type: Number }) amount: number;
   @Prop({ default: 'USD' }) currency: string;
+  @Prop({ type: [String], default: [] }) processedStripeEventIds: string[];
   @Prop({
     enum: ['pending', 'processing', 'completed', 'failed', 'refunded', 'partially_refunded'],
     default: 'pending',

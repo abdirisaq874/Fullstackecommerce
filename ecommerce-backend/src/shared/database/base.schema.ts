@@ -30,4 +30,13 @@ export function applySoftDeleteMiddleware(schema: any) {
     }
     next();
   });
+
+  schema.pre('aggregate', function (this: any, next: any) {
+    const pipeline = this.pipeline();
+    const hasIsDeletedMatch = pipeline.some((stage: any) => stage?.$match?.isDeleted !== undefined);
+    if (!hasIsDeletedMatch) {
+      pipeline.unshift({ $match: { isDeleted: { $ne: true } } });
+    }
+    next();
+  });
 }

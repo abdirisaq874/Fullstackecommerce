@@ -5,7 +5,13 @@ import {
 import { ApiTags, ApiOperation, ApiExcludeEndpoint } from '@nestjs/swagger';
 import { Request } from 'express';
 import { PaymentService } from './payment.service';
-import { Auth } from '../auth/guards/auth.guards';
+import { Auth, CurrentUser } from '../auth/guards/auth.guards';
+import { IsString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+class CreateIntentDto {
+  @ApiProperty() @IsString() orderId: string;
+}
 
 @ApiTags('payments')
 @Controller('payments')
@@ -18,12 +24,14 @@ export class PaymentController {
   @Auth()
   @ApiOperation({ summary: 'Create a payment intent for an order' })
   async createPaymentIntent(
-    @Body() body: { orderId: string; amount: number; currency?: string },
+    @CurrentUser('_id') userId: string,
+    @CurrentUser('role') role: string,
+    @Body() body: CreateIntentDto,
   ) {
     return this.paymentService.createPaymentIntent(
       body.orderId,
-      body.amount,
-      body.currency || 'usd',
+      userId,
+      role,
     );
   }
 

@@ -121,8 +121,12 @@ export class OrderController {
   @Get(':id')
   @Auth()
   @ApiOperation({ summary: 'Get order by ID' })
-  async findById(@Param('id', ParseObjectIdPipe) id: string) {
-    return this.orderService.findById(id);
+  async findById(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @CurrentUser('_id') userId: string,
+    @CurrentUser('role') role: string,
+  ) {
+    return this.orderService.findByIdForUser(id, userId, role);
   }
 
   @Patch(':id/cancel')
