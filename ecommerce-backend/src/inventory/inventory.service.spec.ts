@@ -149,6 +149,49 @@ describe('InventoryService', () => {
     });
   });
 
+  describe('restock (C6 — refund returns stock)', () => {
+    it('adds quantity back and records a returned movement', async () => {
+      mockInventoryModel.findOneAndUpdate.mockResolvedValue({ variantSku: 'SKU-001' });
+      const items = [{ variantSku: 'SKU-001', productId: 'prod_001', quantity: 3 }];
+
+      await service.restock(items, '607f1f77bcf86cd799439022');
+
+      expect(mockInventoryModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { variantSku: 'SKU-001' },
+        { $inc: { quantity: 3 } },
+      );
+      expect(mockMovementModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'returned', quantity: 3 }),
+      );
+      expect(mockEventBus.emit).toHaveBeenCalledWith('inventory.restocked', expect.any(Object));
+    });
+
+    it('no-ops on empty items', async () => {
+      await service.restock([], '607f1f77bcf86cd799439022');
+      expect(mockInventoryModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('missing/empty items guard (C4 — no crash, no-op)', () => {
+    it('release() with undefined items does not throw and touches nothing', async () => {
+      await expect(
+        service.release(undefined as any, '607f1f77bcf86cd799439022'),
+      ).resolves.toBeUndefined();
+      expect(mockInventoryModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(mockEventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it('deduct() with an empty array no-ops', async () => {
+      await service.deduct([], '607f1f77bcf86cd799439022');
+      expect(mockInventoryModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('reserve() with undefined items no-ops', async () => {
+      await service.reserve(undefined as any, '607f1f77bcf86cd799439022');
+      expect(mockInventoryModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('adjust', () => {
     it('should adjust stock and create movement record', async () => {
       mockInventoryModel.findOneAndUpdate.mockResolvedValue({

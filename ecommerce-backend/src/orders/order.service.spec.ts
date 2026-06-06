@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
+import { Types } from 'mongoose';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { Order, OrderStatusHistory } from './schemas/order.schema';
@@ -175,7 +176,7 @@ describe('OrderService', () => {
       ).resolves.toBeDefined();
     });
 
-    it('should reject cancellation by a different user', async () => {
+    it('should reject cancellation by a different user (404, no existence leak)', async () => {
       mockOrderModel.findById.mockResolvedValue({
         ...mockOrder,
         status: 'pending',
@@ -184,7 +185,21 @@ describe('OrderService', () => {
 
       await expect(
         service.cancel('607f1f77bcf86cd799439022', 'different-user-id', 'Trying to cancel'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should allow the owner even when userId arrives as an ObjectId (not a string)', async () => {
+      mockOrderModel.findById.mockResolvedValue({
+        ...mockOrder,
+        status: 'pending',
+        save: jest.fn(),
+      });
+
+      // @CurrentUser('_id') is an ObjectId at runtime — must still match the owner.
+      const ownerObjectId = new Types.ObjectId('507f1f77bcf86cd799439011');
+      await expect(
+        service.cancel('607f1f77bcf86cd799439022', ownerObjectId as any, 'Changed mind'),
+      ).resolves.toBeDefined();
     });
   });
 });

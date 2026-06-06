@@ -10,6 +10,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { Reflector } from '@nestjs/core';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { Types } from 'mongoose';
 
 // ─── JWT Auth Guard ───
 @Injectable()
@@ -30,7 +31,9 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    if (!requiredRoles) return true;
+    // No roles specified (e.g. bare @Auth()) → any authenticated user is allowed.
+    // Note: an empty array is truthy, so we must also check length here.
+    if (!requiredRoles || requiredRoles.length === 0) return true;
 
     const { user } = context.switchToHttp().getRequest();
     return requiredRoles.includes(user.role);
@@ -42,7 +45,13 @@ export const CurrentUser = createParamDecorator(
   (data: string | undefined, ctx: ExecutionContext) => {
     const request = ctx.switchToHttp().getRequest();
     const user = request.user;
-    return data ? user?.[data] : user;
+    if (!data) return user;
+
+    const value = user?.[data];
+    // Normalize Mongo ObjectIds (e.g. @CurrentUser('_id')) to plain strings so
+    // every consumer gets a stable primitive instead of an ObjectId. This keeps
+    // ownership comparisons and query building consistent across the codebase.
+    return value instanceof Types.ObjectId ? value.toString() : value;
   },
 );
 

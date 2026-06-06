@@ -2,10 +2,33 @@ import {
   Controller, Post, Body, Req, Headers, RawBodyRequest,
   HttpCode, HttpStatus, Logger, BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiExcludeEndpoint } from '@nestjs/swagger';
+import {
+  ApiTags, ApiOperation, ApiExcludeEndpoint, ApiProperty, ApiPropertyOptional,
+} from '@nestjs/swagger';
+import { IsMongoId, IsOptional, IsNumber, IsPositive } from 'class-validator';
 import { Request } from 'express';
 import { PaymentService } from './payment.service';
-import { Auth } from '../auth/guards/auth.guards';
+import { Auth, CurrentUser } from '../auth/guards/auth.guards';
+
+class CreatePaymentIntentDto {
+  @ApiProperty({ description: 'ID of the order to pay for' })
+  @IsMongoId()
+  orderId: string;
+  // NOTE: amount & currency are intentionally NOT accepted — the server charges
+  // the order's real total. Sending them is rejected by forbidNonWhitelisted.
+}
+
+class RefundDto {
+  @ApiProperty({ description: 'ID of the order to refund' })
+  @IsMongoId()
+  orderId: string;
+
+  @ApiPropertyOptional({ description: 'Partial refund amount; defaults to the full payment' })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  amount?: number;
+}
 
 @ApiTags('payments')
 @Controller('payments')
@@ -18,13 +41,10 @@ export class PaymentController {
   @Auth()
   @ApiOperation({ summary: 'Create a payment intent for an order' })
   async createPaymentIntent(
-    @Body() body: { orderId: string; amount: number; currency?: string },
+    @CurrentUser('_id') userId: string,
+    @Body() dto: CreatePaymentIntentDto,
   ) {
-    return this.paymentService.createPaymentIntent(
-      body.orderId,
-      body.amount,
-      body.currency || 'usd',
-    );
+    return this.paymentService.createIntentForOrder(dto.orderId, userId.toString());
   }
 
   /**
@@ -59,7 +79,7 @@ export class PaymentController {
   @Post('refund')
   @Auth('admin')
   @ApiOperation({ summary: 'Process a refund for an order' })
-  async refund(@Body() body: { orderId: string; amount?: number }) {
-    return this.paymentService.processRefund(body.orderId, body.amount);
+  async refund(@Body() dto: RefundDto) {
+    return this.paymentService.processRefund(dto.orderId, dto.amount);
   }
 }

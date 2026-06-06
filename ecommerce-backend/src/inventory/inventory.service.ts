@@ -39,6 +39,10 @@ export class InventoryService {
    * with a condition to prevent overselling.
    */
   async reserve(items: ReserveItem[], orderId: string): Promise<void> {
+    if (!Array.isArray(items) || items.length === 0) {
+      this.logger.warn(`reserve: no items for order ${orderId} — skipping`);
+      return;
+    }
     for (const item of items) {
       const result = await this.inventoryModel.findOneAndUpdate(
         {
@@ -74,6 +78,10 @@ export class InventoryService {
    * Convert reserved → sold (after payment confirmed)
    */
   async deduct(items: ReserveItem[], orderId: string): Promise<void> {
+    if (!Array.isArray(items) || items.length === 0) {
+      this.logger.warn(`deduct: no items for order ${orderId} — skipping`);
+      return;
+    }
     for (const item of items) {
       await this.inventoryModel.findOneAndUpdate(
         { variantSku: item.variantSku },
@@ -103,9 +111,40 @@ export class InventoryService {
   }
 
   /**
+   * Return sold stock back to on-hand quantity (e.g. after a refund).
+   * Mirrors deduct(): deduct lowered `quantity`; restock raises it again.
+   */
+  async restock(items: ReserveItem[], orderId: string): Promise<void> {
+    if (!Array.isArray(items) || items.length === 0) {
+      this.logger.warn(`restock: no items for order ${orderId} — skipping`);
+      return;
+    }
+    for (const item of items) {
+      await this.inventoryModel.findOneAndUpdate(
+        { variantSku: item.variantSku },
+        { $inc: { quantity: item.quantity } },
+      );
+
+      await this.movementModel.create({
+        variantSku: item.variantSku,
+        type: 'returned',
+        quantity: item.quantity,
+        referenceType: 'order',
+        referenceId: new Types.ObjectId(orderId),
+      });
+    }
+
+    await this.eventBus.emit('inventory.restocked', { orderId, items });
+  }
+
+  /**
    * Release reserved stock (payment failed or order cancelled)
    */
   async release(items: ReserveItem[], orderId: string): Promise<void> {
+    if (!Array.isArray(items) || items.length === 0) {
+      this.logger.warn(`release: no items for order ${orderId} — skipping`);
+      return;
+    }
     await this.releaseReservations(items, orderId);
     await this.eventBus.emit('inventory.released', { orderId, items });
   }

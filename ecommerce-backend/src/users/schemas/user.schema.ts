@@ -86,7 +86,7 @@ export class User {
   lastLoginAt?: Date;
 
   @Prop({ type: [AddressSchema], default: [] })
-  addresses: Address[];
+  addresses: Types.DocumentArray<Address>;
 
   // Virtual
   fullName?: string;

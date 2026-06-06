@@ -37,3 +37,15 @@ export function generateOrderNumber(): string {
 export function roundMoney(amount: number): number {
   return Math.round(amount * 100) / 100;
 }
+
+/**
+ * Compare two identifiers (Mongo ObjectId, string, or anything stringable) by
+ * value. Returns false if either side is null/undefined.
+ *
+ * Use for ownership / authorization checks so the result never depends on
+ * whether an id arrived as an ObjectId or a string.
+ */
+export function idsEqual(a: unknown, b: unknown): boolean {
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+}

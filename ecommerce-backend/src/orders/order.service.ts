@@ -7,7 +7,7 @@ import { Order, OrderDocument, OrderStatusHistory } from './schemas/order.schema
 import { CartService } from '../cart/cart.service';
 import { EventBusService } from '../shared/events/event-bus.service';
 import { PaginatedResponseDto, PaginationDto } from '../shared/database/pagination.dto';
-import { generateOrderNumber, roundMoney } from '../shared/utils/helpers';
+import { generateOrderNumber, roundMoney, idsEqual } from '../shared/utils/helpers';
 
 export interface CreateOrderDto {
   shippingAddressId: string;
@@ -127,6 +127,11 @@ export class OrderService {
     }
   }
 
+  /**
+   * Internal lookup with NO authorization check.
+   * Trusted server-side flows (e.g. status updates) call this directly.
+   * Request-scoped, ownership-checked reads go through OrderOwnershipGuard.
+   */
   async findById(orderId: string): Promise<OrderDocument> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
@@ -205,8 +210,9 @@ export class OrderService {
 
   async cancel(orderId: string, userId: string, reason?: string): Promise<OrderDocument> {
     const order = await this.findById(orderId);
-    if (order.userId.toString() !== userId) {
-      throw new BadRequestException('Not your order');
+    // 404 (not "Not your order") so a non-owner can't confirm the order exists.
+    if (!idsEqual(order.userId, userId)) {
+      throw new NotFoundException('Order not found');
     }
     return this.updateStatus(orderId, 'cancelled', userId, reason);
   }

@@ -30,4 +30,18 @@ export function applySoftDeleteMiddleware(schema: any) {
     }
     next();
   });
+
+  // Aggregation bypasses the query middleware above, so exclude soft-deleted
+  // docs here too — unless the pipeline already references isDeleted, or starts
+  // with a stage that must come first ($match/$search/$geoNear handled safely).
+  schema.pre('aggregate', function (this: any, next: any) {
+    const pipeline = this.pipeline();
+    const alreadyFilters = JSON.stringify(pipeline).includes('isDeleted');
+    const firstStage = pipeline[0] && Object.keys(pipeline[0])[0];
+    const mustBeFirst = firstStage === '$search' || firstStage === '$geoNear';
+    if (!alreadyFilters && !mustBeFirst) {
+      pipeline.unshift({ $match: { isDeleted: { $ne: true } } });
+    }
+    next();
+  });
 }
