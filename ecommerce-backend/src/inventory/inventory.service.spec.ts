@@ -123,7 +123,7 @@ describe('InventoryService', () => {
       await service.deduct(items, '607f1f77bcf86cd799439022');
 
       expect(mockInventoryModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { variantSku: 'SKU-001' },
+        { variantSku: 'SKU-001', reserved: { $gte: 3 } },
         { $inc: { quantity: -3, reserved: -3 } },
       );
       expect(mockEventBus.emit).toHaveBeenCalledWith('inventory.deducted', expect.any(Object));
