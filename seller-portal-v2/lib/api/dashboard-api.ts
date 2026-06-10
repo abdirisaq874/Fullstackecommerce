@@ -97,8 +97,56 @@ export const dashboardApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getDashboardMetrics: builder.query<DashboardMetrics, void>({
       query: () => ({ url: '/admin/dashboard/stats', method: 'GET' }),
-      transformResponse: (res: ResponseEnvelope<DashboardMetrics> | DashboardMetrics) =>
-        unwrapEnvelope<DashboardMetrics>(res),
+      transformResponse: (
+        res: ResponseEnvelope<Partial<DashboardMetrics>> | Partial<DashboardMetrics>,
+      ): DashboardMetrics => {
+        // Backend `/admin/dashboard/stats` returns only a subset of the rich
+        // DashboardMetrics shape the v2 dashboard was designed against
+        // (action board, leaderboards, store health, etc.). Synthesize a full
+        // default and overlay whatever the backend actually returned so the
+        // page renders empty states cleanly for new sellers.
+        const partial = unwrapEnvelope<Partial<DashboardMetrics>>(res) ?? {};
+        const empty: DashboardMetrics = {
+          grossSales: 0,
+          netRevenue: 0,
+          profit: 0,
+          ordersToday: 0,
+          ordersThisWeek: 0,
+          pendingFulfillment: 0,
+          lowStockSkus: 0,
+          unrepliedMessages: 0,
+          pendingReturns: 0,
+          weekRevenue: [],
+          weekProfit: [],
+          weekLabels: [],
+          costs: {
+            productCost: 0,
+            platformFee: 0,
+            paymentFee: 0,
+            shippingCost: 0,
+            refundCost: 0,
+          },
+          health: {
+            rating: 0,
+            onTimeShipmentPct: 0,
+            cancellationRatePct: 0,
+            returnRatePct: 0,
+            responseRatePct: 0,
+          },
+          actionBoard: { fix: [], watch: [], scale: [] },
+        };
+        return {
+          ...empty,
+          ...partial,
+          costs: { ...empty.costs, ...(partial.costs ?? {}) },
+          health: { ...empty.health, ...(partial.health ?? {}) },
+          actionBoard: {
+            fix: partial.actionBoard?.fix ?? empty.actionBoard.fix,
+            watch: partial.actionBoard?.watch ?? empty.actionBoard.watch,
+            scale: partial.actionBoard?.scale ?? empty.actionBoard.scale,
+          },
+        };
+      },
       providesTags: [{ type: 'Dashboard', id: 'METRICS' }],
     }),
 

@@ -38,10 +38,26 @@ export const ordersApi = baseApi.injectEndpoints({
         method: 'GET',
         params: params ?? undefined,
       }),
-      transformResponse: (r: ResponseEnvelope<Order[]> | Order[]) =>
-        unwrapEnvelope<Order[]>(r),
+      transformResponse: (
+        r:
+          | ResponseEnvelope<{ data: Order[] } | Order[]>
+          | { data: Order[] }
+          | Order[],
+      ): Order[] => {
+        // Backend `/orders` paginates: TransformInterceptor envelope wraps an
+        // inner `{ data: [...], meta }`. Pull `.data` off the inner shape.
+        const unwrapped = unwrapEnvelope<{ data: Order[] } | Order[]>(r);
+        if (
+          unwrapped &&
+          typeof unwrapped === 'object' &&
+          Array.isArray((unwrapped as { data?: unknown }).data)
+        ) {
+          return (unwrapped as { data: Order[] }).data;
+        }
+        return Array.isArray(unwrapped) ? unwrapped : [];
+      },
       providesTags: (result) =>
-        result
+        Array.isArray(result)
           ? [{ type: 'Order', id: 'LIST' }, ...result.map(o => ({ type: 'Order' as const, id: o.id }))]
           : [{ type: 'Order', id: 'LIST' }],
     }),
