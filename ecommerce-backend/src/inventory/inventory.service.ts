@@ -175,26 +175,6 @@ export class InventoryService {
     }
   }
 
-  async restock(items: ReserveItem[], orderId: string): Promise<void> {
-    for (const item of items) {
-      await this.inventoryModel.findOneAndUpdate(
-        { variantSku: item.variantSku },
-        { $inc: { quantity: item.quantity } },
-        { upsert: true },
-      );
-
-      await this.movementModel.create({
-        variantSku: item.variantSku,
-        type: 'returned',
-        quantity: item.quantity,
-        referenceType: 'order',
-        referenceId: new Types.ObjectId(orderId),
-      });
-    }
-
-    await this.eventBus.emit('inventory.restocked', { orderId, items });
-  }
-
   /**
    * Manual stock adjustment (admin)
    */

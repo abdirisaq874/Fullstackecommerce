@@ -44,7 +44,17 @@ export class InventoryEventsListener {
   async handleOrderCancelled(payload: {
     orderId: string;
     items: ReserveItem[];
+    previousStatus?: string;
   }) {
+    // Only release reserved stock if the order was still pending (stock was
+    // reserved but never deducted). For confirmed/processing/shipped orders
+    // the stock was already deducted, so a refund-driven restock must be
+    // handled by the refund.processed flow instead — releasing here would
+    // double-credit inventory.
+    if (payload.previousStatus && payload.previousStatus !== 'pending') {
+      return;
+    }
+    if (!payload.items?.length) return;
     this.logger.log(`Releasing stock for cancelled order ${payload.orderId}`);
     await this.inventoryService.release(payload.items, payload.orderId);
   }
@@ -53,9 +63,10 @@ export class InventoryEventsListener {
   async handleRefundProcessed(payload: {
     orderId: string;
     items: ReserveItem[];
-    isFullRefund?: boolean;
+    restock?: boolean;
   }) {
-    if (!payload.isFullRefund) return;
+    if (!payload.restock) return;
+    if (!payload.items?.length) return;
     this.logger.log(`Restocking items for refunded order ${payload.orderId}`);
     await this.inventoryService.restock(payload.items, payload.orderId);
   }

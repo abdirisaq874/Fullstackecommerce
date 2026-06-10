@@ -17,13 +17,16 @@ export function PageHeader({
   return (
     <div className="mb-7">
       {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav className="text-xs text-stone-500 mb-3 flex items-center gap-1.5 flex-wrap">
+        <nav
+          aria-label="Breadcrumb"
+          className="text-xs text-stone-600 dark:text-stone-300 mb-3 flex items-center gap-1.5 flex-wrap"
+        >
           {breadcrumbs.map((b, i) => (
             <span key={i} className="flex items-center gap-1.5">
-              {i > 0 && <ChevronRight className="w-3 h-3 text-stone-300" />}
+              {i > 0 && <ChevronRight className="w-3 h-3 text-stone-400 dark:text-stone-500" aria-hidden="true" />}
               {b.href
-                ? <Link href={b.href} className="hover:text-stone-900">{b.label}</Link>
-                : <span className="text-stone-700">{b.label}</span>}
+                ? <Link href={b.href} className="hover:text-stone-900 dark:hover:text-stone-100">{b.label}</Link>
+                : <span className="text-stone-700 dark:text-stone-200" aria-current="page">{b.label}</span>}
             </span>
           ))}
         </nav>

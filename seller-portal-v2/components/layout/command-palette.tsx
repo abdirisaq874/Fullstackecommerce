@@ -1,124 +1,223 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Package, ShoppingCart, Layers, MessageCircle, ArrowRight } from 'lucide-react';
-import { Modal } from '@/components/primitives/modal';
-import { useAppDispatch, useAppSelector } from '@/lib/api/store';
-import { setCommandPaletteOpen } from '@/lib/api/ui-slice';
-import { useListProductsQuery, useListOrdersQuery, useListInventoryQuery, useListMessagesQuery } from '@/lib/api';
+import { Search, Package, ShoppingCart, MessageCircle, ArrowRight, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
-interface PaletteItem {
-  id: string;
-  label: string;
-  hint?: string;
-  href: string;
-  icon: typeof Search;
-  group: string;
-}
+import { Modal } from '@/components/primitives/modal';
+import { Alert } from '@/components/primitives/alert';
+import { Badge } from '@/components/primitives/badge';
+import { useAppDispatch, useAppSelector } from '@/lib/api/store';
+import { setCommandPaletteOpen } from '@/lib/api/ui-slice';
+import { useLazySearchQuery } from '@/lib/api/search-api';
+import type { SearchResult, SearchEntityType } from '@/lib/api/search-api';
+import type { BadgeVariant } from '@/lib/utils';
+
+const DEBOUNCE_MS = 300;
+const SEARCH_LIMIT = 20;
+
+// Per-entity icon + badge styling so the result row can render any type
+// with a single component.
+const TYPE_META: Record<SearchEntityType, { icon: typeof Search; label: string; variant: BadgeVariant; group: string }> = {
+  product: { icon: Package, label: 'Product', variant: 'success', group: 'Products' },
+  order: { icon: ShoppingCart, label: 'Order', variant: 'info', group: 'Orders' },
+  message: { icon: MessageCircle, label: 'Message', variant: 'neutral', group: 'Messages' },
+};
 
 export function CommandPalette() {
-  const open = useAppSelector(s => s.ui.commandPaletteOpen);
+  const open = useAppSelector((s) => s.ui.commandPaletteOpen);
   const dispatch = useAppDispatch();
   const router = useRouter();
+
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
 
-  const { data: products = [] }  = useListProductsQuery();
-  const { data: orders = [] }    = useListOrdersQuery();
-  const { data: inventory = [] } = useListInventoryQuery();
-  const { data: messages = [] }  = useListMessagesQuery();
+  // Lazy trigger so we only hit the backend after the debounce elapses,
+  // not on every keystroke. `lastData` keeps the previous results visible
+  // while a new request is in flight (smoother UX than a flicker to empty).
+  const [trigger, { data, isFetching, isError, error }] = useLazySearchQuery();
 
-  const items = useMemo<PaletteItem[]>(() => {
-    const all: PaletteItem[] = [];
-    products.forEach(p => all.push({
-      id: `p-${p.id}`, label: p.name, hint: `${p.sku} · ${p.status}`,
-      href: `/products/${p.id}/edit`, icon: Package, group: 'Products',
-    }));
-    orders.forEach(o => all.push({
-      id: `o-${o.id}`, label: `Order #${o.id}`, hint: `${o.customer} · ${o.status}`,
-      href: `/orders/${o.id}`, icon: ShoppingCart, group: 'Orders',
-    }));
-    inventory.forEach(r => all.push({
-      id: `i-${r.sku}`, label: r.sku, hint: `${r.productName} · ${r.available} available`,
-      href: `/inventory/${r.sku}`, icon: Layers, group: 'Inventory',
-    }));
-    messages.forEach(m => all.push({
-      id: `m-${m.id}`, label: m.subject, hint: `from ${m.customer}`,
-      href: `/messages/${m.id}`, icon: MessageCircle, group: 'Messages',
-    }));
-    return all;
-  }, [products, orders, inventory, messages]);
+  // Debounce: wait DEBOUNCE_MS after the user stops typing before firing.
+  // Empty queries reset to an empty result set without hitting the network.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!trimmed) return;
+    debounceRef.current = setTimeout(() => {
+      trigger({ q: trimmed, limit: SEARCH_LIMIT }, /* preferCacheValue */ true);
+    }, DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query, trigger]);
 
-  const filtered = useMemo(() => {
-    if (!query) return items.slice(0, 10);
-    const q = query.toLowerCase();
-    return items.filter(i =>
-      i.label.toLowerCase().includes(q) || i.hint?.toLowerCase().includes(q)
-    ).slice(0, 20);
-  }, [items, query]);
+  // Reset highlighted row whenever the query or palette open state changes.
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [query, open]);
 
-  useEffect(() => { setActiveIdx(0); }, [query, open]);
+  const trimmed = query.trim();
+  const results = useMemo<SearchResult[]>(
+    () => (trimmed ? data?.results ?? [] : []),
+    [data, trimmed],
+  );
 
-  const close = () => { dispatch(setCommandPaletteOpen(false)); setQuery(''); };
+  // Group results by entity type for section headings while preserving the
+  // server-side ordering (products → orders → messages, since the backend
+  // returns them concatenated in that order).
+  const groups = useMemo(() => {
+    const byType: Record<SearchEntityType, SearchResult[]> = { product: [], order: [], message: [] };
+    for (const r of results) byType[r.type].push(r);
+    return (['product', 'order', 'message'] as SearchEntityType[])
+      .filter((t) => byType[t].length > 0)
+      .map((t) => ({ type: t, items: byType[t] }));
+  }, [results]);
 
-  const go = (item: PaletteItem) => { router.push(item.href); close(); };
-
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(filtered.length - 1, i + 1)); }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIdx(i => Math.max(0, i - 1)); }
-    if (e.key === 'Enter' && filtered[activeIdx]) { e.preventDefault(); go(filtered[activeIdx]); }
+  const close = () => {
+    dispatch(setCommandPaletteOpen(false));
+    setQuery('');
   };
 
-  // Group filtered items
-  const groups = filtered.reduce<Record<string, PaletteItem[]>>((acc, it) => {
-    (acc[it.group] ??= []).push(it);
-    return acc;
-  }, {});
+  const go = (item: SearchResult) => {
+    router.push(item.url);
+    close();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(results.length - 1, i + 1));
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(0, i - 1));
+    }
+    if (e.key === 'Enter' && results[activeIdx]) {
+      e.preventDefault();
+      go(results[activeIdx]);
+    }
+  };
+
+  // Derive top-level state for the result body so each branch is explicit:
+  // idle (no query) → empty hint, fetching → spinner, error → alert,
+  // empty result set → "No results", otherwise → grouped list.
+  const showSpinner = isFetching && results.length === 0;
+  const showError = !isFetching && isError && trimmed.length > 0;
+  const showEmpty = !isFetching && !isError && trimmed.length > 0 && results.length === 0;
+  const showIdle = !trimmed;
+
+  // Best-effort error message extraction (FetchBaseQueryError shape varies).
+  const errorMessage = (() => {
+    if (!isError || !error) return null;
+    const e = error as { data?: { message?: string }; error?: string; status?: number | string };
+    return e.data?.message ?? e.error ?? `Search failed${e.status ? ` (${e.status})` : ''}`;
+  })();
 
   return (
     <Modal open={open} onClose={close} size="md">
-      <div className="px-4 py-3 border-b border-stone-200 flex items-center gap-3">
-        <Search className="w-4 h-4 text-stone-400" />
+      <div className="px-4 py-3 border-b border-stone-200 dark:border-forest-900 flex items-center gap-3">
+        <Search className="w-4 h-4 text-stone-400" aria-hidden="true" />
         <input
           autoFocus
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Search products, orders, inventory, messages…"
-          className="flex-1 bg-transparent outline-none text-sm placeholder:text-stone-400"
+          placeholder="Search products, orders, messages…"
+          aria-label="Search"
+          className="flex-1 bg-transparent outline-none text-sm placeholder:text-stone-400 dark:text-stone-100"
         />
-        <kbd className="text-2xs text-stone-400 border border-stone-200 rounded px-1.5 py-0.5">esc</kbd>
+        {isFetching && trimmed && (
+          <Loader2 className="w-3.5 h-3.5 text-stone-400 animate-spin" aria-hidden="true" />
+        )}
+        <kbd className="text-2xs text-stone-400 border border-stone-200 dark:border-forest-900 rounded px-1.5 py-0.5">esc</kbd>
       </div>
+
       <div className="max-h-96 overflow-y-auto scrollbar-thin">
-        {filtered.length === 0 ? (
+        {showIdle && (
           <div className="px-6 py-12 text-center text-sm text-stone-500">
-            No results for "{query}"
+            Start typing to search products, orders, and messages.
           </div>
-        ) : (
-          Object.entries(groups).map(([groupName, list]) => (
-            <div key={groupName} className="py-2">
-              <div className="px-4 py-1 text-2xs uppercase tracking-wide text-stone-400 font-medium">{groupName}</div>
-              {list.map(item => {
-                const idx = filtered.indexOf(item);
+        )}
+
+        {showSpinner && (
+          <div className="px-6 py-12 flex items-center justify-center gap-2 text-sm text-stone-500">
+            <Loader2 className="w-4 h-4 animate-spin text-brand-700" aria-hidden="true" />
+            <span>Searching…</span>
+          </div>
+        )}
+
+        {showError && (
+          <div className="px-4 py-4">
+            <Alert variant="danger">{errorMessage}</Alert>
+          </div>
+        )}
+
+        {showEmpty && (
+          <div className="px-6 py-12 text-center text-sm text-stone-500">
+            No results for &ldquo;{trimmed}&rdquo;
+          </div>
+        )}
+
+        {!showIdle && !showSpinner && !showError && results.length > 0 && (
+          groups.map(({ type, items }) => (
+            <div key={type} className="py-2">
+              <div className="px-4 py-1 text-2xs uppercase tracking-wide text-stone-400 font-medium">
+                {TYPE_META[type].group}
+              </div>
+              {items.map((item) => {
+                const idx = results.indexOf(item);
                 const active = idx === activeIdx;
+                const Icon = TYPE_META[item.type].icon;
                 return (
                   <button
-                    key={item.id}
+                    key={`${item.type}-${item.id}`}
+                    type="button"
                     onMouseEnter={() => setActiveIdx(idx)}
                     onClick={() => go(item)}
                     className={clsx(
                       'w-full px-4 py-2 flex items-center gap-3 text-left transition-colors',
-                      active ? 'bg-brand-50' : 'hover:bg-stone-50'
+                      active
+                        ? 'bg-brand-50 dark:bg-forest-900/60'
+                        : 'hover:bg-stone-50 dark:hover:bg-forest-900/40',
                     )}
                   >
-                    <item.icon className={clsx('w-4 h-4 shrink-0', active ? 'text-brand-700' : 'text-stone-400')} />
+                    <Icon
+                      className={clsx(
+                        'w-4 h-4 shrink-0',
+                        active ? 'text-brand-700 dark:text-brand-300' : 'text-stone-400',
+                      )}
+                      aria-hidden="true"
+                    />
                     <div className="flex-1 min-w-0">
-                      <div className={clsx('text-sm truncate', active ? 'text-brand-900 font-medium' : 'text-stone-900')}>{item.label}</div>
-                      {item.hint && <div className="text-xs text-stone-500 truncate">{item.hint}</div>}
+                      <div className="flex items-center gap-2">
+                        <Badge variant={TYPE_META[item.type].variant}>
+                          {TYPE_META[item.type].label}
+                        </Badge>
+                        <div
+                          className={clsx(
+                            'text-sm truncate',
+                            active
+                              ? 'text-brand-900 dark:text-brand-100 font-medium'
+                              : 'text-stone-900 dark:text-stone-100',
+                          )}
+                        >
+                          {item.title}
+                        </div>
+                      </div>
+                      {item.subtitle && (
+                        <div className="text-xs text-stone-500 dark:text-stone-400 truncate mt-0.5">
+                          {item.subtitle}
+                        </div>
+                      )}
                     </div>
-                    {active && <ArrowRight className="w-3.5 h-3.5 text-brand-700" />}
+                    {active && (
+                      <ArrowRight
+                        className="w-3.5 h-3.5 text-brand-700 dark:text-brand-300"
+                        aria-hidden="true"
+                      />
+                    )}
                   </button>
                 );
               })}
@@ -126,10 +225,18 @@ export function CommandPalette() {
           ))
         )}
       </div>
-      <div className="px-4 py-2.5 border-t border-stone-200 bg-stone-50/40 flex items-center gap-4 text-2xs text-stone-500">
-        <span><kbd className="border border-stone-200 rounded px-1 py-0.5">↑</kbd> <kbd className="border border-stone-200 rounded px-1 py-0.5">↓</kbd> navigate</span>
-        <span><kbd className="border border-stone-200 rounded px-1 py-0.5">↵</kbd> open</span>
-        <span><kbd className="border border-stone-200 rounded px-1 py-0.5">esc</kbd> close</span>
+
+      <div className="px-4 py-2.5 border-t border-stone-200 dark:border-forest-900 bg-stone-50/40 dark:bg-forest-950/40 flex items-center gap-4 text-2xs text-stone-500">
+        <span>
+          <kbd className="border border-stone-200 dark:border-forest-900 rounded px-1 py-0.5">↑</kbd>{' '}
+          <kbd className="border border-stone-200 dark:border-forest-900 rounded px-1 py-0.5">↓</kbd> navigate
+        </span>
+        <span>
+          <kbd className="border border-stone-200 dark:border-forest-900 rounded px-1 py-0.5">↵</kbd> open
+        </span>
+        <span>
+          <kbd className="border border-stone-200 dark:border-forest-900 rounded px-1 py-0.5">esc</kbd> close
+        </span>
       </div>
     </Modal>
   );

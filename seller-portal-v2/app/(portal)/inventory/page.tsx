@@ -7,6 +7,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/primitives/card';
 import { Badge } from '@/components/primitives/badge';
 import { Input } from '@/components/primitives/field';
+// TODO (H5): migrate this page to <ResponsiveTable> so rows collapse to cards
+// below the md breakpoint — see /orders and /products for the pattern.
 import { DataTable, type Column } from '@/components/data/data-table';
 import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
 import { StockBar } from '@/components/inventory/stock-bar';

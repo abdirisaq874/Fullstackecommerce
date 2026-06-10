@@ -1,105 +1,173 @@
 'use client';
 
+import { useMemo, useState } from 'react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Area,
+  ComposedChart,
+} from 'recharts';
+import clsx from 'clsx';
 import { Card } from '@/components/primitives/card';
+import { CardSkeleton, ErrorState } from '@/components/data/states';
 import { formatCurrency } from '@/lib/utils';
-import { useState } from 'react';
+import { useGetRevenueQuery, type RevenuePoint } from '@/lib/api';
 
-interface TrendChartProps {
-  labels: string[];
-  revenue: number[];
-  profit: number[];
+type Range = 7 | 30 | 90;
+
+const RANGES: { label: string; value: Range }[] = [
+  { label: '7d',  value: 7  },
+  { label: '30d', value: 30 },
+  { label: '90d', value: 90 },
+];
+
+// Forest-green palette (Tailwind `brand` scale in tailwind.config.ts).
+const LINE_COLOR     = '#047857'; // brand-700
+const AREA_TOP       = '#10b981'; // brand-500
+const AREA_BOTTOM    = '#ecfdf5'; // brand-50
+const GRID_COLOR     = '#f5f5f4'; // stone-100
+const AXIS_LABEL     = '#a8a29e'; // stone-400
+
+// Format a 'YYYY-MM-DD' date as 'MMM DD' for the X axis ticks.
+function formatTickDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' });
 }
 
-export function TrendChart({ labels, revenue, profit }: TrendChartProps) {
-  const [hover, setHover] = useState<number | null>(null);
-  const max = Math.max(...revenue) * 1.15;
-  const width = 600;
-  const height = 180;
-  const padX = 30;
-  const padY = 20;
-  const innerW = width - padX * 2;
-  const innerH = height - padY * 2;
+// Format a 'YYYY-MM-DD' date as 'Mon, MMM DD YYYY' for the tooltip header.
+function formatTooltipDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-US', {
+    weekday: 'short', year: 'numeric', month: 'short', day: '2-digit', timeZone: 'UTC',
+  });
+}
 
-  const xFor = (i: number) => padX + (i / (labels.length - 1)) * innerW;
-  const yFor = (v: number) => padY + innerH - (v / max) * innerH;
+interface TooltipPayload {
+  active?: boolean;
+  payload?: Array<{ payload: RevenuePoint }>;
+}
 
-  const revPath = revenue.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i)} ${yFor(v)}`).join(' ');
-  const profitPath = profit.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i)} ${yFor(v)}`).join(' ');
-  const revAreaPath = `${revPath} L ${xFor(labels.length - 1)} ${padY + innerH} L ${xFor(0)} ${padY + innerH} Z`;
+function RevenueTooltip({ active, payload }: TooltipPayload) {
+  if (!active || !payload || payload.length === 0) return null;
+  const point = payload[0].payload;
+  return (
+    <div className="bg-stone-900 text-white text-xs px-3 py-2 rounded-md shadow-lg pointer-events-none">
+      <div className="font-medium mb-0.5">{formatTooltipDate(point.date)}</div>
+      <div className="text-stone-200">Revenue · {formatCurrency(point.revenue)}</div>
+      {typeof point.orders === 'number' && (
+        <div className="text-stone-400">Orders · {point.orders}</div>
+      )}
+    </div>
+  );
+}
+
+export function TrendChart() {
+  const [range, setRange] = useState<Range>(30);
+  const { data, isLoading, isError, refetch } = useGetRevenueQuery({ days: range });
+
+  // Recharts handles empty arrays gracefully but the axes look nicer if we
+  // memoize the sorted series.
+  const series = useMemo<RevenuePoint[]>(() => {
+    if (!data) return [];
+    return [...data].sort((a, b) => a.date.localeCompare(b.date));
+  }, [data]);
 
   return (
     <Card className="p-5">
       <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
         <div>
-          <h2 className="text-sm font-medium text-stone-900">Revenue & profit trend</h2>
-          <p className="text-xs text-stone-500 mt-0.5">Last 7 days</p>
+          <h2 className="text-sm font-medium text-stone-900">Revenue trend</h2>
+          <p className="text-xs text-stone-500 mt-0.5">
+            Last {range} days
+          </p>
         </div>
-        <div className="flex items-center gap-4 text-xs">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-brand-600" />
-            <span className="text-stone-600">Revenue</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-stone-400" />
-            <span className="text-stone-600">Profit</span>
-          </div>
+        <div className="inline-flex items-center rounded-md border border-stone-200 bg-white p-0.5">
+          {RANGES.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => setRange(r.value)}
+              aria-pressed={range === r.value}
+              className={clsx(
+                'px-2.5 py-1 text-xs font-medium rounded',
+                'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500',
+                range === r.value
+                  ? 'bg-brand-700 text-white'
+                  : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900',
+              )}
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
       </div>
-      <div className="relative">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-44">
-          {/* Grid */}
-          {[0.25, 0.5, 0.75, 1].map((t, i) => (
-            <line
-              key={i}
-              x1={padX} x2={width - padX}
-              y1={padY + innerH * (1 - t)} y2={padY + innerH * (1 - t)}
-              stroke="#f5f5f4" strokeWidth="1"
-            />
-          ))}
-          {/* Revenue area */}
-          <path d={revAreaPath} fill="url(#revGradient)" opacity="0.4" />
-          <defs>
-            <linearGradient id="revGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#047857" stopOpacity="0.5" />
-              <stop offset="100%" stopColor="#047857" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          {/* Revenue line */}
-          <path d={revPath} fill="none" stroke="#047857" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-          {/* Profit line */}
-          <path d={profitPath} fill="none" stroke="#78716c" strokeWidth="1.5" strokeDasharray="3 3" strokeLinejoin="round" />
 
-          {/* Hover dots & labels */}
-          {labels.map((label, i) => (
-            <g key={i}>
-              <rect
-                x={xFor(i) - 25} y={padY}
-                width="50" height={innerH}
-                fill="transparent"
-                onMouseEnter={() => setHover(i)}
-                onMouseLeave={() => setHover(null)}
-                style={{ cursor: 'pointer' }}
-              />
-              {hover === i && (
-                <>
-                  <line x1={xFor(i)} x2={xFor(i)} y1={padY} y2={padY + innerH} stroke="#d6d3d1" strokeWidth="1" />
-                  <circle cx={xFor(i)} cy={yFor(revenue[i])} r="4" fill="#047857" stroke="white" strokeWidth="2" />
-                  <circle cx={xFor(i)} cy={yFor(profit[i])} r="3" fill="#78716c" stroke="white" strokeWidth="2" />
-                </>
-              )}
-              <text x={xFor(i)} y={height - 4} textAnchor="middle" fontSize="10" fill="#a8a29e">{label}</text>
-            </g>
-          ))}
-        </svg>
-        {hover !== null && (
-          <div
-            className="absolute -translate-x-1/2 -translate-y-full bg-stone-900 text-white text-xs px-3 py-2 rounded-md shadow-lg pointer-events-none"
-            style={{ left: `${(xFor(hover) / width) * 100}%`, top: `${(yFor(revenue[hover]) / height) * 100}%` }}
-          >
-            <div className="font-medium mb-0.5">{labels[hover]}</div>
-            <div className="text-stone-200">Revenue · {formatCurrency(revenue[hover])}</div>
-            <div className="text-stone-400">Profit · {formatCurrency(profit[hover])}</div>
+      <div className="h-64">
+        {isLoading ? (
+          <CardSkeleton height={240} />
+        ) : isError ? (
+          <ErrorState onRetry={refetch} message="We couldn’t load revenue data." />
+        ) : series.length === 0 ? (
+          <div className="h-full grid place-items-center text-sm text-stone-500">
+            No revenue in the selected range.
           </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={series}
+              margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
+            >
+              <defs>
+                <linearGradient id="revAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"   stopColor={AREA_TOP}    stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={AREA_BOTTOM} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={GRID_COLOR} strokeDasharray="3 3" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatTickDate}
+                tickLine={false}
+                axisLine={{ stroke: GRID_COLOR }}
+                tick={{ fill: AXIS_LABEL, fontSize: 11 }}
+                minTickGap={24}
+              />
+              <YAxis
+                tickFormatter={(v) => formatCurrency(Number(v))}
+                tickLine={false}
+                axisLine={false}
+                tick={{ fill: AXIS_LABEL, fontSize: 11 }}
+                width={72}
+              />
+              <Tooltip
+                content={<RevenueTooltip />}
+                cursor={{ stroke: '#d6d3d1', strokeWidth: 1 }}
+              />
+              <Area
+                type="monotone"
+                dataKey="revenue"
+                stroke="none"
+                fill="url(#revAreaGradient)"
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="revenue"
+                stroke={LINE_COLOR}
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4, stroke: 'white', strokeWidth: 2, fill: LINE_COLOR }}
+                isAnimationActive={false}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
         )}
       </div>
     </Card>

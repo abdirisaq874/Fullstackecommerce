@@ -37,14 +37,16 @@ export function DimensionRow({
           value={dimension.name}
           onChange={e => onNameChange(e.target.value)}
           placeholder="Dimension name (e.g. Size, Color)"
+          aria-label="Dimension name"
         />
         <button
           onClick={onRemove}
           className="text-stone-400 hover:text-red-600 p-1.5"
           title="Remove dimension"
+          aria-label={dimension.name ? `Remove dimension ${dimension.name}` : 'Remove dimension'}
           type="button"
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 className="w-4 h-4" aria-hidden="true" />
         </button>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -55,9 +57,10 @@ export function DimensionRow({
               onClick={() => onRemoveValue(vi)}
               className="text-stone-400 hover:text-red-600 p-0.5 rounded-full hover:bg-red-50"
               title="Remove value"
+              aria-label={`Remove value ${val}`}
               type="button"
             >
-              <X className="w-3 h-3" />
+              <X className="w-3 h-3" aria-hidden="true" />
             </button>
           </span>
         ))}
@@ -73,6 +76,7 @@ export function DimensionRow({
           }}
           onBlur={commit}
           placeholder={dimension.values.length ? 'Add another…' : 'Type a value and press Enter'}
+          aria-label={dimension.name ? `Add value to ${dimension.name}` : 'Add dimension value'}
         />
       </div>
       {error && <div className="text-xs text-red-600 mt-2">{error}</div>}

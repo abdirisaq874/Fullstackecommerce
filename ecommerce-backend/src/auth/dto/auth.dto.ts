@@ -5,8 +5,10 @@ import {
   MaxLength,
   IsOptional,
   Matches,
+  IsEnum,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { UserRole } from '../../users/schemas/user.schema';
 
 export class RegisterDto {
   @ApiProperty({ example: 'john@example.com' })
@@ -39,6 +41,11 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional({ enum: UserRole, example: UserRole.CUSTOMER, description: 'Account type. Defaults to CUSTOMER. Only CUSTOMER and SELLER are allowed via self-registration; ADMIN must be assigned manually.' })
+  @IsOptional()
+  @IsEnum([UserRole.CUSTOMER, UserRole.SELLER])
+  role?: UserRole;
 }
 
 export class LoginDto {

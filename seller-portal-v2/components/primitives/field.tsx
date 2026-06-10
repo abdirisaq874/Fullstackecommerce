@@ -1,7 +1,11 @@
 import clsx from 'clsx';
 import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from 'react';
 
-export const inputClass = 'w-full px-3 py-2 bg-white border border-stone-200 rounded-md text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/10 transition-colors';
+export const inputClass = clsx(
+  'w-full px-3 py-2 bg-white border border-stone-200 rounded-md text-sm text-stone-900',
+  'placeholder:text-stone-400 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/10 transition-colors',
+  'dark:bg-forest-900 dark:border-forest-800 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-brand-500 dark:focus:ring-brand-400/20',
+);
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...rest }, ref) => <input ref={ref} className={clsx(inputClass, className)} {...rest} />
@@ -30,13 +34,13 @@ interface FieldProps {
 export function Field({ label, hint, error, required, children, className }: FieldProps) {
   return (
     <div className={className}>
-      <label className="block text-sm font-medium text-stone-800 mb-1.5">
-        {label} {required && <span className="text-red-600">*</span>}
+      <label className="block text-sm font-medium text-stone-800 dark:text-stone-200 mb-1.5">
+        {label} {required && <span className="text-red-600 dark:text-red-400">*</span>}
       </label>
       {children}
       {error
-        ? <div className="text-xs text-red-600 mt-1">{error}</div>
-        : hint ? <div className="text-xs text-stone-500 mt-1">{hint}</div> : null}
+        ? <div className="text-xs text-red-600 dark:text-red-400 mt-1">{error}</div>
+        : hint ? <div className="text-xs text-stone-500 dark:text-stone-400 mt-1">{hint}</div> : null}
     </div>
   );
 }

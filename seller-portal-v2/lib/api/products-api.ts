@@ -1,13 +1,54 @@
-import { baseApi, delay } from './base-api';
-import { db } from './mock-db';
+import { baseApi, unwrapEnvelope, type ResponseEnvelope } from './base-api';
 import type { Product, CreateProductDto } from '@/lib/types';
+
+/**
+ * Query params accepted by GET /products (see backend `ProductQueryDto`).
+ *
+ * NOTE: the backend uses `q`, `category`, `brand` for search/filtering — the
+ * frontend convenience aliases below (`search`, `categoryId`, `sellerId`) are
+ * mapped to those server-side names inside the `query` builder.
+ */
+export interface ListProductsParams {
+  page?: number;
+  limit?: number;
+  status?: 'draft' | 'active' | 'archived';
+  search?: string;
+  categoryId?: string;
+  sellerId?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
 
 export const productsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    listProducts: builder.query<Product[], void>({
-      async queryFn() {
-        await delay(200);
-        return { data: db.products };
+    listProducts: builder.query<Product[], ListProductsParams | void>({
+      query: (params) => {
+        const p = params || {};
+        return {
+          url: '/products',
+          method: 'GET',
+          params: {
+            page: p.page,
+            limit: p.limit,
+            status: p.status,
+            // Server-side names: `q` for free-text search, `category` for category id.
+            q: p.search,
+            category: p.categoryId,
+            sellerId: p.sellerId,
+            sortBy: p.sortBy,
+            sortOrder: p.sortOrder,
+          },
+        };
+      },
+      transformResponse: (res: ResponseEnvelope<Product[]> | { data: Product[] } | Product[]) => {
+        // Paginated list responses come through as `{ data: [...], meta: {...} }`
+        // wrapped in the envelope; unwrap once to get the paginated payload,
+        // then peel off `.data` if it's the paginated shape.
+        const unwrapped = unwrapEnvelope<any>(res as any);
+        if (unwrapped && typeof unwrapped === 'object' && Array.isArray(unwrapped.data)) {
+          return unwrapped.data as Product[];
+        }
+        return (unwrapped as Product[]) ?? [];
       },
       providesTags: (result) =>
         result
@@ -15,87 +56,37 @@ export const productsApi = baseApi.injectEndpoints({
           : [{ type: 'Product', id: 'LIST' }],
     }),
 
+    /**
+     * Backend exposes GET /products/:slug (lookup by slug, not id). Existing
+     * callers pass the product slug as the parameter — if they pass an id we
+     * fall through to the same endpoint, which will 404 cleanly.
+     */
     getProduct: builder.query<Product | undefined, string>({
-      async queryFn(id) {
-        await delay(150);
-        return { data: db.products.find(p => p.id === id) };
-      },
+      query: (slug) => ({
+        url: `/products/${slug}`,
+        method: 'GET',
+      }),
+      transformResponse: (res: ResponseEnvelope<Product> | Product) => unwrapEnvelope<Product>(res),
       providesTags: (_, __, id) => [{ type: 'Product', id }],
     }),
 
     createProduct: builder.mutation<Product, CreateProductDto & { dimensions?: any[]; hasVariants?: boolean; stockOnHand?: any }>({
-      async queryFn(data) {
-        await delay(400);
-        const id = `p_${Date.now()}`;
-        const sku = data.variants?.[0]?.sku || data.name.toUpperCase().slice(0, 8).replace(/\s/g, '');
-        const stock = data.variants?.length
-          ? data.variants.reduce((s, v: any) => s + (Number(v.stockOnHand) || 0), 0)
-          : data.stockOnHand !== undefined && data.stockOnHand !== ''
-            ? Number(data.stockOnHand)
-            : null;
-        const newProduct: Product = {
-          id, name: data.name, sku,
-          categoryId: data.categoryId, brandId: data.brandId,
-          basePrice: Number(data.basePrice),
-          compareAtPrice: data.compareAtPrice ? Number(data.compareAtPrice) : null,
-          currency: data.currency || 'USD',
-          status: data.status || 'draft',
-          isFeatured: !!data.isFeatured,
-          stock,
-          shortDescription: data.shortDescription,
-          description: data.description,
-          attributes: data.attributes || [],
-          images: data.images || [],
-          variants: (data.variants || []) as any,
-          localizations: data.localizations,
-          metaTitle: data.metaTitle,
-          metaDescription: data.metaDescription,
-          salesCount: 0, revenueLifetime: 0, viewsLifetime: 0,
-          updatedAt: 'Just now', createdAt: 'Just now',
-          initial: data.name[0]?.toUpperCase() || '?',
-        };
-        db.products = [newProduct, ...db.products];
-        // Also seed inventory rows for each variant
-        if (data.variants?.length) {
-          db.inventory = [
-            ...data.variants.map((v: any) => ({
-              sku: v.sku, productName: data.name, productId: id,
-              variantInfo: (v.options || []).map((o: any) => `${o.name}: ${o.value}`).join(' · ') || v.name || '—',
-              onHand: Number(v.stockOnHand) || 0, reserved: 0, available: Number(v.stockOnHand) || 0,
-              warehouse: 'Istanbul', reorderThreshold: 5,
-              movements: [{ type: 'received' as const, delta: Number(v.stockOnHand) || 0, reason: 'Initial stock', date: 'Just now' }],
-            })),
-            ...db.inventory,
-          ];
-        }
-        return { data: newProduct };
-      },
+      query: (body) => ({
+        url: '/products',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (res: ResponseEnvelope<Product> | Product) => unwrapEnvelope<Product>(res),
       invalidatesTags: [{ type: 'Product', id: 'LIST' }, { type: 'Inventory', id: 'LIST' }, { type: 'Dashboard', id: 'METRICS' }],
     }),
 
     updateProduct: builder.mutation<Product, { id: string; patch: Partial<CreateProductDto> & { variants?: any[] } }>({
-      async queryFn({ id, patch }) {
-        await delay(300);
-        const idx = db.products.findIndex(p => p.id === id);
-        if (idx < 0) return { error: { status: 404, data: 'Not found' } } as any;
-        const existing = db.products[idx];
-        const stock = patch.variants?.length
-          ? patch.variants.reduce((s, v: any) => s + (Number(v.stockOnHand) || 0), 0)
-          : existing.stock;
-        const updated: Product = {
-          ...existing,
-          ...patch,
-          basePrice: patch.basePrice !== undefined ? Number(patch.basePrice) : existing.basePrice,
-          compareAtPrice: patch.compareAtPrice !== undefined
-            ? (patch.compareAtPrice ? Number(patch.compareAtPrice) : null)
-            : existing.compareAtPrice,
-          variants: (patch.variants ?? existing.variants) as any,
-          stock,
-          updatedAt: 'Just now',
-        };
-        db.products[idx] = updated;
-        return { data: updated };
-      },
+      query: ({ id, patch }) => ({
+        url: `/products/${id}`,
+        method: 'PATCH',
+        body: patch,
+      }),
+      transformResponse: (res: ResponseEnvelope<Product> | Product) => unwrapEnvelope<Product>(res),
       invalidatesTags: (_, __, { id }) => [
         { type: 'Product', id },
         { type: 'Product', id: 'LIST' },
@@ -103,24 +94,29 @@ export const productsApi = baseApi.injectEndpoints({
       ],
     }),
 
+    /** Backend DELETE /products/:id is a soft-archive (sets status='archived'). */
     archiveProduct: builder.mutation<void, string>({
-      async queryFn(id) {
-        await delay(200);
-        db.products = db.products.map(p => p.id === id ? { ...p, status: 'archived', updatedAt: 'Just now' } : p);
-        return { data: undefined };
-      },
+      query: (id) => ({
+        url: `/products/${id}`,
+        method: 'DELETE',
+      }),
+      transformResponse: () => undefined,
       invalidatesTags: (_, __, id) => [{ type: 'Product', id }, { type: 'Product', id: 'LIST' }],
     }),
 
+    /**
+     * TODO(backend): there is no bulk-update endpoint on the products controller
+     * yet. Until one exists, calls to this hook will hit POST /products/bulk-update
+     * and fail with 404. Tracked separately from C1 — keep the hook so consumers
+     * still type-check, but the request is intentionally non-functional.
+     */
     bulkUpdateProducts: builder.mutation<void, { ids: string[]; patch: Partial<Product> }>({
-      async queryFn({ ids, patch }) {
-        await delay(400);
-        const idSet = new Set(ids);
-        db.products = db.products.map(p =>
-          idSet.has(p.id) ? { ...p, ...patch, updatedAt: 'Just now' } : p
-        );
-        return { data: undefined };
-      },
+      query: ({ ids, patch }) => ({
+        url: '/products/bulk-update',
+        method: 'POST',
+        body: { ids, patch },
+      }),
+      transformResponse: () => undefined,
       invalidatesTags: [{ type: 'Product', id: 'LIST' }, { type: 'Dashboard', id: 'METRICS' }],
     }),
   }),

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { TrendChart } from '@/components/dashboard/trend-chart';
@@ -8,16 +9,24 @@ import { ProfitTruthCard, ProductsLeaderboard } from '@/components/dashboard/pro
 import { ActionBoard } from '@/components/dashboard/action-board';
 import { CardSkeleton, ErrorState } from '@/components/data/states';
 import { Button } from '@/components/primitives/button';
-import { Calendar, Download } from 'lucide-react';
+import { Calendar, Download, ArrowRight, Sparkles } from 'lucide-react';
 import {
   useGetDashboardMetricsQuery, useGetWinningProductsQuery, useGetSlidingProductsQuery,
 } from '@/lib/api';
+import { useGetSettingsQuery } from '@/lib/api/seller-settings-api';
 import { formatCurrency } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { data: m, isLoading, isError, refetch } = useGetDashboardMetricsQuery();
   const { data: winners = [] } = useGetWinningProductsQuery();
   const { data: sliders = [] } = useGetSlidingProductsQuery();
+  // Onboarding (H10): show a welcome card on dashboards when the seller
+  // hasn't filled in their store profile yet. We treat an empty
+  // displayName as the trigger — settings are auto-created on first read,
+  // so this just means a brand-new seller.
+  const { data: settings } = useGetSettingsQuery();
+  const showOnboardingCard =
+    settings !== undefined && !settings.storeProfile?.displayName?.trim();
 
   if (isError) return <ErrorState onRetry={refetch} />;
 
@@ -40,6 +49,27 @@ export default function DashboardPage() {
         }
       />
 
+      {showOnboardingCard && (
+        <div className="mb-6 rounded-lg border border-brand-200 bg-gradient-to-br from-brand-50 to-white p-5 flex items-start gap-4 flex-wrap">
+          <div className="w-10 h-10 rounded-full bg-brand-100 grid place-items-center shrink-0">
+            <Sparkles className="w-5 h-5 text-brand-700" strokeWidth={2} />
+          </div>
+          <div className="flex-1 min-w-[16rem]">
+            <h2 className="font-serif text-lg text-stone-900">Welcome! Let&apos;s set up your store</h2>
+            <p className="text-sm text-stone-600 mt-1">
+              Complete your profile, payouts and shipping in four quick steps so you can start selling.
+            </p>
+          </div>
+          <Link
+            href="/onboarding"
+            className="inline-flex items-center gap-1.5 rounded-md bg-brand-700 text-white text-sm font-medium px-3 py-1.5 hover:bg-brand-800"
+          >
+            Complete your profile
+            <ArrowRight className="w-4 h-4" strokeWidth={2} />
+          </Link>
+        </div>
+      )}
+
       {/* ─── Top KPI row (doc: gross sales, net revenue, profit, orders) ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {isLoading || !m ? (
@@ -58,11 +88,12 @@ export default function DashboardPage() {
       </div>
 
       {/* ─── Middle row: trend + profit truth ─── */}
+      {/* TrendChart owns its own /admin/dashboard/revenue query and a 7d/30d/90d
+          range picker, so we render it unconditionally — it shows its own
+          loading and error states. */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2">
-          {isLoading || !m
-            ? <CardSkeleton height={280} />
-            : <TrendChart labels={m.weekLabels} revenue={m.weekRevenue} profit={m.weekProfit} />}
+          <TrendChart />
         </div>
         <div>
           {isLoading || !m

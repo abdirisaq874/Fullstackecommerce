@@ -29,7 +29,7 @@ export function DataTable<T>({
   empty,
 }: DataTableProps<T>) {
   if (data.length === 0) {
-    return <div className="px-5 py-16 text-center text-sm text-stone-500">{empty ?? 'No records to display.'}</div>;
+    return <div className="px-5 py-16 text-center text-sm text-stone-600 dark:text-stone-300">{empty ?? 'No records to display.'}</div>;
   }
 
   const allSelected = selectable && selectedIds && data.every(r => selectedIds.has(rowKey(r)));
@@ -55,8 +55,9 @@ export function DataTable<T>({
             {columns.map(col => (
               <th
                 key={col.key}
+                scope="col"
                 className={clsx(
-                  'text-left px-5 py-2.5 text-2xs font-medium text-stone-500 uppercase tracking-wide',
+                  'text-left px-5 py-2.5 text-2xs font-medium text-stone-600 dark:text-stone-300 uppercase tracking-wide',
                   col.className
                 )}
               >
@@ -86,7 +87,7 @@ export function DataTable<T>({
                       checked={!!isSelected}
                       onChange={e => onSelect?.(id, e.target.checked)}
                       className="w-4 h-4 rounded border-stone-300 text-brand-700 focus:ring-brand-500"
-                      aria-label={`Select row`}
+                      aria-label="Select row"
                     />
                   </td>
                 )}

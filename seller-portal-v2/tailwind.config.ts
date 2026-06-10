@@ -2,6 +2,7 @@ import type { Config } from 'tailwindcss';
 
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       fontFamily: {
@@ -20,6 +21,15 @@ const config: Config = {
           700: '#047857',
           800: '#065f46',
           900: '#064e3b',
+          950: '#022c22',
+        },
+        // Forest-green dark mode surfaces. Deep forest backgrounds paired with
+        // high-lightness foreground tones for legibility.
+        forest: {
+          50:  '#f0fdf4',
+          100: '#dcfce7',
+          900: '#0a1f17', // page surface
+          950: '#061410', // app shell (sidebar / topbar)
         },
       },
       fontSize: {

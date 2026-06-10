@@ -11,7 +11,15 @@
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
+  /* Forest-green dark mode surfaces — deep forest backgrounds with
+     high-lightness foreground tones. Driven by `next-themes` adding
+     `class="dark"` on <html>. */
+  html.dark body {
+    background: #061410;
+    color: #f5f5f4;
+  }
   ::selection { background: #d1fae5; color: #064e3b; }
+  html.dark ::selection { background: #065f46; color: #ecfdf5; }
   .tabular-nums { font-variant-numeric: tabular-nums; }
 }
 
@@ -20,6 +28,8 @@
   .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+  html.dark .scrollbar-thin::-webkit-scrollbar-thumb { background: #1f3a2e; }
+  html.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #2f5a47; }
 }
 
 /* Print stylesheet for packing slips / invoices */

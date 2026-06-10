@@ -264,7 +264,7 @@ export class PaymentService {
       paymentId: payment._id.toString(),
       refundAmount,
       stripeRefundId: refund.id,
-      isFullRefund,
+      restock: isFullRefund,
       items,
     });
 

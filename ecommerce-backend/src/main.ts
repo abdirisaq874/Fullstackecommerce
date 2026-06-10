@@ -28,7 +28,7 @@ async function bootstrap() {
     origin: process.env.FRONTEND_URL || 'http://localhost:3001',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'stripe-signature'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'stripe-signature', 'X-Request-Id'],
   });
 
   // Global prefix
@@ -53,6 +53,13 @@ async function bootstrap() {
   );
 
   // Swagger API docs (only in non-production)
+  // NOTE (F9): The OpenAPI JSON document is exposed at /docs-json (via
+  // `jsonDocumentUrl`) alongside the Swagger UI at /docs. This is consumed by
+  // the seller-portal-v2 `openapi-typescript` codegen pipeline. We deliberately
+  // keep BOTH the UI and the JSON endpoint inside the non-production guard:
+  // codegen is expected to run against a developer or staging environment
+  // (NODE_ENV !== 'production'), never against a hardened prod deploy. This
+  // avoids leaking the full API surface from production hosts.
   if (process.env.NODE_ENV !== 'production') {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('E-Commerce API')
@@ -72,7 +79,9 @@ async function bootstrap() {
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('docs', app, document);
+    SwaggerModule.setup('docs', app, document, {
+      jsonDocumentUrl: 'docs-json',
+    });
   }
 
   // Graceful shutdown
@@ -84,6 +93,7 @@ async function bootstrap() {
   logger.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   if (process.env.NODE_ENV !== 'production') {
     logger.log(`Swagger docs at http://localhost:${port}/docs`);
+    logger.log(`OpenAPI JSON at http://localhost:${port}/docs-json`);
   }
 }
 

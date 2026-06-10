@@ -1,17 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send, Mail } from 'lucide-react';
+import { useForm, type SubmitHandler } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/primitives/card';
 import { Button } from '@/components/primitives/button';
-import { Badge } from '@/components/primitives/badge';
 import { Textarea } from '@/components/primitives/field';
 import { CardSkeleton, ErrorState } from '@/components/data/states';
 import { useGetThreadQuery, useReplyToThreadMutation, useMarkReadMutation } from '@/lib/api';
 import { useToast } from '@/lib/hooks/use-toast';
+import { replySchema, type ReplyFormValues } from '@/lib/schemas/message';
 import clsx from 'clsx';
 
 export default function MessageThreadPage({ params }: { params: { id: string } }) {
@@ -20,7 +22,18 @@ export default function MessageThreadPage({ params }: { params: { id: string } }
   const [reply, { isLoading: sending }] = useReplyToThreadMutation();
   const [markRead] = useMarkReadMutation();
   const toast = useToast();
-  const [body, setBody] = useState('');
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<ReplyFormValues>({
+    resolver: zodResolver(replySchema),
+    defaultValues: { body: '' },
+    mode: 'onBlur',
+  });
 
   // Mark as read when opened
   useEffect(() => {
@@ -30,12 +43,18 @@ export default function MessageThreadPage({ params }: { params: { id: string } }
   if (isError) return <ErrorState onRetry={refetch} />;
   if (isLoading || !thread) return <CardSkeleton height={400} />;
 
-  const send = async () => {
-    if (!body.trim()) return;
-    await reply({ id: thread.id, body: body.trim() }).unwrap();
+  const onSubmit: SubmitHandler<ReplyFormValues> = async (values) => {
+    await reply({
+      id: thread.id,
+      body: values.body.trim(),
+      ...(values.attachments ? { attachments: values.attachments } : {}),
+    }).unwrap();
     toast.success('Reply sent');
-    setBody('');
+    reset({ body: '' });
   };
+
+  const bodyValue = watch('body');
+  const isSending = sending || isSubmitting;
 
   return (
     <>
@@ -99,23 +118,35 @@ export default function MessageThreadPage({ params }: { params: { id: string } }
 
         {/* Reply composer */}
         <Card className="p-4">
-          <Textarea
-            rows={4}
-            value={body}
-            onChange={e => setBody(e.target.value)}
-            placeholder={`Reply to ${thread.customer}…`}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
-            }}
-          />
-          <div className="flex items-center justify-between mt-3">
-            <span className="text-xs text-stone-500">
-              Press <kbd className="border border-stone-200 rounded px-1 py-0.5 text-2xs">⌘ Enter</kbd> to send
-            </span>
-            <Button variant="primary" onClick={send} disabled={sending || !body.trim()}>
-              <Send className="w-3.5 h-3.5" /> Send reply
-            </Button>
-          </div>
+          <form onSubmit={handleSubmit(onSubmit)} noValidate>
+            <Textarea
+              rows={4}
+              placeholder={`Reply to ${thread.customer}…`}
+              aria-invalid={Boolean(errors.body)}
+              {...register('body')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void handleSubmit(onSubmit)();
+                }
+              }}
+            />
+            {errors.body && (
+              <p className="text-red-600 text-sm mt-1">{errors.body.message}</p>
+            )}
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-xs text-stone-500">
+                Press <kbd className="border border-stone-200 rounded px-1 py-0.5 text-2xs">⌘ Enter</kbd> to send
+              </span>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isSending || !bodyValue?.trim()}
+              >
+                <Send className="w-3.5 h-3.5" /> Send reply
+              </Button>
+            </div>
+          </form>
         </Card>
       </div>
     </>

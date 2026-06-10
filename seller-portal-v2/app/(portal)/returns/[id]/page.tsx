@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useForm, type SubmitHandler } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, Check, X, RotateCcw, Package, Mail } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardHeader, CardTitle } from '@/components/primitives/card';
@@ -12,9 +13,18 @@ import { Alert } from '@/components/primitives/alert';
 import { Field, Input, Select, Textarea } from '@/components/primitives/field';
 import { CardSkeleton, ErrorState } from '@/components/data/states';
 import { Money } from '@/components/shared/format';
-import { useGetReturnQuery, useSetReturnStatusMutation } from '@/lib/api';
+import {
+  useGetReturnQuery,
+  useSetReturnStatusMutation,
+  useRecordInspectionMutation,
+} from '@/lib/api';
 import { useToast } from '@/lib/hooks/use-toast';
 import { statusVariant } from '@/lib/utils';
+import {
+  inspectionSchema,
+  type InspectionFormInput,
+  type InspectionFormValues,
+} from '@/lib/schemas/return';
 import type { ReturnStatus, RefundDecision } from '@/lib/types';
 
 const REASON_LABELS: Record<string, string> = {
@@ -32,11 +42,33 @@ export default function ReturnDetailPage({ params }: { params: { id: string } })
   const router = useRouter();
   const { data: ret, isLoading, isError, refetch } = useGetReturnQuery(params.id);
   const [setStatus, { isLoading: updating }] = useSetReturnStatusMutation();
+  const [recordInspection, { isLoading: submittingInspection }] = useRecordInspectionMutation();
   const toast = useToast();
 
-  const [decision, setDecision] = useState<RefundDecision>('full-refund');
-  const [refundAmount, setRefundAmount] = useState('');
-  const [note, setNote] = useState('');
+  // Post-receipt inspection form (D3): RHF + zod replaces the previous
+  // useState trio. Submitting calls PATCH /returns/:id/inspection via
+  // `useRecordInspectionMutation` (instead of the legacy status mutation),
+  // matching the backend's `RecordInspectionDto.refundDecision` shape.
+  // `InspectionFormInput` is the pre-coerce shape RHF binds to (the number
+  // input renders strings). `InspectionFormValues` is the validated output
+  // that the submit handler receives after `zodResolver` has run.
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors },
+  } = useForm<InspectionFormInput, unknown, InspectionFormValues>({
+    resolver: zodResolver(inspectionSchema),
+    mode: 'onBlur',
+    defaultValues: {
+      refundType: 'full',
+      refundAmountCents: undefined,
+      restockable: true,
+      inspectionNotes: '',
+    },
+  });
+
+  const refundType = watch('refundType');
 
   if (isError) return <ErrorState onRetry={refetch} />;
   if (isLoading || !ret) return <CardSkeleton height={400} />;
@@ -53,6 +85,27 @@ export default function ReturnDetailPage({ params }: { params: { id: string } })
     if (!confirm('Reject this return request? The customer will be notified.')) return;
     await setStatus({ id: ret.id, status: 'rejected', refundAmount: 0 });
     toast.success('Return rejected');
+  };
+
+  const onSubmitInspection: SubmitHandler<InspectionFormValues> = async (values) => {
+    // The returns API slice currently types `refundDecision.type` as the
+    // legacy frontend `RefundDecision` union (`'full-refund' | ...`), but
+    // the NestJS `RecordInspectionDto` actually accepts the schema-accurate
+    // `'full' | 'partial' | 'store_credit'` enum (matching `inspectionSchema`).
+    // Cast through the api-layer's declared type until that slice is
+    // realigned (owned by C1-C7).
+    await recordInspection({
+      id: ret.id,
+      refundDecision: {
+        type: values.refundType as unknown as RefundDecision,
+        ...(values.refundAmountCents !== undefined
+          ? { refundAmountCents: values.refundAmountCents }
+          : {}),
+        restockable: values.restockable,
+        ...(values.inspectionNotes ? { inspectionNotes: values.inspectionNotes } : {}),
+      },
+    }).unwrap();
+    toast.success('Inspection saved');
   };
 
   return (
@@ -176,38 +229,66 @@ export default function ReturnDetailPage({ params }: { params: { id: string } })
             <Card className="p-5">
               <h3 className="text-sm font-medium text-stone-900 mb-3">Inspect and decide</h3>
               <p className="text-sm text-stone-600 mb-4">Once items are inspected, choose how to resolve.</p>
-              <div className="space-y-3 max-w-md">
-                <Field label="Decision">
-                  <Select value={decision} onChange={e => setDecision(e.target.value as RefundDecision)}>
-                    <option value="full-refund">Full refund</option>
-                    <option value="partial-refund">Partial refund (with restocking fee)</option>
-                    <option value="replace">Send replacement</option>
-                    <option value="reject">Reject (not eligible)</option>
-                  </Select>
-                </Field>
-                {(decision === 'full-refund' || decision === 'partial-refund') && (
-                  <Field label="Refund amount" hint="Customer's original payment will be refunded">
-                    <Input
-                      type="number" step="0.01" min="0"
-                      value={refundAmount || (decision === 'full-refund' ? String(totalRequested) : '')}
-                      onChange={e => setRefundAmount(e.target.value)}
-                      placeholder={String(totalRequested)}
+              <form onSubmit={handleSubmit(onSubmitInspection)} noValidate>
+                <div className="space-y-3 max-w-md">
+                  <Field label="Refund type" error={errors.refundType?.message}>
+                    <Select
+                      aria-invalid={Boolean(errors.refundType)}
+                      {...register('refundType')}
+                    >
+                      <option value="full">Full refund</option>
+                      <option value="partial">Partial refund</option>
+                      <option value="store_credit">Store credit</option>
+                    </Select>
+                  </Field>
+                  {refundType === 'partial' && (
+                    <Field
+                      label="Refund amount (cents)"
+                      hint="Whole cents. Required for partial refunds."
+                      error={errors.refundAmountCents?.message}
+                    >
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        placeholder={String(totalRequested)}
+                        aria-invalid={Boolean(errors.refundAmountCents)}
+                        {...register('refundAmountCents')}
+                      />
+                    </Field>
+                  )}
+                  <Field label="Restockable" error={errors.restockable?.message}>
+                    <label className="inline-flex items-center gap-2 text-sm text-stone-700">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300 text-brand-600 focus:ring-brand-600/20"
+                        {...register('restockable')}
+                      />
+                      Items can be returned to inventory
+                    </label>
+                  </Field>
+                  <Field
+                    label="Inspection notes (optional)"
+                    error={errors.inspectionNotes?.message}
+                  >
+                    <Textarea
+                      rows={2}
+                      placeholder="Items returned in good condition…"
+                      aria-invalid={Boolean(errors.inspectionNotes)}
+                      {...register('inspectionNotes')}
                     />
                   </Field>
-                )}
-                <Field label="Internal note (optional)">
-                  <Textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="Items returned in good condition…" />
-                </Field>
-              </div>
-              <div className="flex gap-2 mt-4">
-                <Button
-                  variant="primary"
-                  onClick={() => advance('inspected', { decision, refundAmount: Number(refundAmount) || totalRequested })}
-                  disabled={updating}
-                >
-                  Save inspection
-                </Button>
-              </div>
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={updating || submittingInspection}
+                  >
+                    {submittingInspection ? 'Saving…' : 'Save inspection'}
+                  </Button>
+                </div>
+              </form>
             </Card>
           )}
 

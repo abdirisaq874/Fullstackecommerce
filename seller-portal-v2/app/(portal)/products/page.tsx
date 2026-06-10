@@ -10,7 +10,7 @@ import { Card } from '@/components/primitives/card';
 import { Button } from '@/components/primitives/button';
 import { Badge } from '@/components/primitives/badge';
 import { Field, Input, Select } from '@/components/primitives/field';
-import { DataTable, type Column } from '@/components/data/data-table';
+import { ResponsiveTable, type ResponsiveColumn } from '@/components/data/responsive-table';
 import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
 import { CsvImportModal } from '@/components/product/csv-import-modal';
 import { Money } from '@/components/shared/format';
@@ -114,9 +114,9 @@ export default function ProductsPage() {
     toast.success(`Imported ${count} products as drafts`);
   };
 
-  const columns: Column<Product>[] = [
+  const columns: ResponsiveColumn<Product>[] = [
     {
-      key: 'name', header: 'Product', className: 'min-w-[280px]',
+      key: 'name', header: 'Product', className: 'min-w-[280px]', mobilePrimary: true,
       render: (p) => (
         <Link href={`/products/${p.id}/edit`} className="flex items-center gap-3 group">
           <div className="w-10 h-10 rounded-md overflow-hidden bg-stone-100 grid place-items-center shrink-0 ring-1 ring-stone-200">
@@ -168,14 +168,16 @@ export default function ProductsPage() {
     },
     { key: 'updated', header: 'Updated', render: (p) => <span className="text-xs text-stone-500">{p.updatedAt}</span> },
     {
-      key: 'actions', header: '', className: 'w-12',
+      key: 'actions', header: '', className: 'w-12', mobileHidden: true,
       render: (p) => (
         <button
+          type="button"
           className="text-stone-400 hover:text-stone-700 p-1"
           onClick={(e) => { e.stopPropagation(); router.push(`/products/${p.id}/analytics`); }}
           title="Open analytics"
+          aria-label={`Open analytics for ${p.name}`}
         >
-          <BarChart3 className="w-4 h-4" />
+          <BarChart3 className="w-4 h-4" aria-hidden="true" />
         </button>
       ),
     },
@@ -254,8 +256,13 @@ export default function ProductsPage() {
             <Button onClick={bulkFeature} disabled={bulking}><Star className="w-3.5 h-3.5" /> Feature</Button>
             <Button onClick={exportCsv}><Download className="w-3.5 h-3.5" /> Export selected</Button>
             <Button variant="danger-ghost" onClick={bulkArchive} disabled={bulking}><Archive className="w-3.5 h-3.5" /> Archive</Button>
-            <button onClick={() => setSelected(new Set())} className="ml-auto text-stone-500 hover:text-stone-900 p-1">
-              <X className="w-4 h-4" />
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="ml-auto text-stone-500 hover:text-stone-900 p-1"
+              aria-label="Clear product selection"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </Card>
@@ -271,7 +278,7 @@ export default function ProductsPage() {
             action={<Button variant="primary" onClick={() => router.push('/products/new')}><Plus className="w-3.5 h-3.5" /> Add product</Button>}
           />
         ) : (
-          <DataTable
+          <ResponsiveTable
             columns={columns}
             data={filtered}
             rowKey={p => p.id}

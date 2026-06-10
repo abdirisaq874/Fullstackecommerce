@@ -15,11 +15,11 @@ export function EmptyState({
 }) {
   return (
     <div className="px-5 py-16 text-center">
-      <div className="w-12 h-12 rounded-full bg-stone-100 grid place-items-center mx-auto mb-4">
-        <Icon className="w-5 h-5 text-stone-400" strokeWidth={2} />
+      <div className="w-12 h-12 rounded-full bg-stone-100 dark:bg-forest-900 grid place-items-center mx-auto mb-4">
+        <Icon className="w-5 h-5 text-stone-500 dark:text-stone-400" strokeWidth={2} aria-hidden="true" />
       </div>
-      <h3 className="text-sm font-medium text-stone-900 mb-1">{title}</h3>
-      {description && <p className="text-sm text-stone-500 mb-4 max-w-sm mx-auto">{description}</p>}
+      <h3 className="text-sm font-medium text-stone-900 dark:text-stone-100 mb-1">{title}</h3>
+      {description && <p className="text-sm text-stone-600 dark:text-stone-300 mb-4 max-w-sm mx-auto">{description}</p>}
       {action}
     </div>
   );
@@ -27,12 +27,12 @@ export function EmptyState({
 
 export function ErrorState({ onRetry, message }: { onRetry?: () => void; message?: string }) {
   return (
-    <div className="px-5 py-16 text-center">
-      <div className="w-12 h-12 rounded-full bg-red-50 grid place-items-center mx-auto mb-4">
-        <AlertCircle className="w-5 h-5 text-red-600" strokeWidth={2} />
+    <div className="px-5 py-16 text-center" role="alert">
+      <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-950/40 grid place-items-center mx-auto mb-4">
+        <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" strokeWidth={2} aria-hidden="true" />
       </div>
-      <h3 className="text-sm font-medium text-stone-900 mb-1">Something went wrong</h3>
-      <p className="text-sm text-stone-500 mb-4 max-w-sm mx-auto">{message ?? 'We couldn’t load this data. Please try again.'}</p>
+      <h3 className="text-sm font-medium text-stone-900 dark:text-stone-100 mb-1">Something went wrong</h3>
+      <p className="text-sm text-stone-600 dark:text-stone-300 mb-4 max-w-sm mx-auto">{message ?? 'We couldn’t load this data. Please try again.'}</p>
       {onRetry && <Button onClick={onRetry}>Retry</Button>}
     </div>
   );

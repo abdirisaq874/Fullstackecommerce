@@ -25,6 +25,15 @@ import { PaymentModule } from './payments/payment.module';
 import { NotificationModule } from './notifications/notification.module';
 import { AdminModule } from './admin/admin.module';
 import { HealthModule } from './health/health.module';
+import { SellerSettingsModule } from './seller-settings/seller-settings.module';
+import { SellerCustomersModule } from './seller-customers/seller-customers.module';
+import { ShippingModule } from './shipping/shipping.module';
+import { SellerFinanceModule } from './seller-finance/seller-finance.module';
+import { UploadsModule } from './uploads/uploads.module';
+import { ReturnsModule } from './returns/returns.module';
+import { MessagesModule } from './messages/messages.module';
+import { CouponModule } from './coupons/coupon.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -88,6 +97,15 @@ import { HealthModule } from './health/health.module';
     NotificationModule,
     AdminModule,
     HealthModule,
+    SellerSettingsModule,
+    SellerCustomersModule,
+    ShippingModule,
+    SellerFinanceModule,
+    UploadsModule,
+    ReturnsModule,
+    MessagesModule,
+    CouponModule,
+    SearchModule,
   ],
   providers: [
     // Apply rate limiting globally

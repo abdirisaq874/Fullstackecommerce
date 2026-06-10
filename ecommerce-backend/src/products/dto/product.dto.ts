@@ -3,7 +3,7 @@ import {
   IsArray, ValidateNested, Min, MaxLength, IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { PaginationDto } from '../../shared/database/pagination.dto';
 
 export class VariantOptionDto {
@@ -70,7 +70,7 @@ export class CreateProductDto {
   @ApiPropertyOptional() @IsOptional() @IsString() metaDescription?: string;
 }
 
-export class UpdateProductDto extends CreateProductDto {}
+export class UpdateProductDto extends PartialType(CreateProductDto) {}
 
 export class ProductQueryDto extends PaginationDto {
   @ApiPropertyOptional() @IsOptional() @IsString() q?: string;

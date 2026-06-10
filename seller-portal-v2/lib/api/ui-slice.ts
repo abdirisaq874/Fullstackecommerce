@@ -10,12 +10,16 @@ interface UiState {
   toasts: Toast[];
   commandPaletteOpen: boolean;
   notificationsPanelOpen: boolean;
+  /** Mobile sidebar drawer open state. Only meaningful below the `lg` breakpoint
+   *  — the sidebar is always visible on lg+ screens regardless of this flag. */
+  sidebarOpen: boolean;
 }
 
 const initialState: UiState = {
   toasts: [],
   commandPaletteOpen: false,
   notificationsPanelOpen: false,
+  sidebarOpen: false,
 };
 
 const uiSlice = createSlice({
@@ -34,6 +38,9 @@ const uiSlice = createSlice({
     setNotificationsPanelOpen: (state, action: PayloadAction<boolean>) => {
       state.notificationsPanelOpen = action.payload;
     },
+    setSidebarOpen: (state, action: PayloadAction<boolean>) => {
+      state.sidebarOpen = action.payload;
+    },
   },
 });
 
@@ -42,6 +49,7 @@ export const {
   dismissToast,
   setCommandPaletteOpen,
   setNotificationsPanelOpen,
+  setSidebarOpen,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;
