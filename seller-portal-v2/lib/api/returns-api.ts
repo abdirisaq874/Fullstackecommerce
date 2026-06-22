@@ -36,7 +36,8 @@ export const returnsApi = baseApi.injectEndpoints({
           ...(status === 'received'  ? { receivedAt: 'Just now' } : {}),
           ...(status === 'refunded'  ? { refundedAt: 'Just now' } : {}),
         };
-        db.returns[idx] = updated;
+        // New array, not in-place — the cached array is frozen by RTK/Immer.
+        db.returns = db.returns.map((x, i) => (i === idx ? updated : x));
         return { data: updated };
       },
       invalidatesTags: (_, __, { id }) => [{ type: 'Return', id }, { type: 'Return', id: 'LIST' }, { type: 'Dashboard', id: 'METRICS' }],

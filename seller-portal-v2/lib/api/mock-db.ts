@@ -14,6 +14,7 @@ export const CATEGORIES = [
   { id: 'cat-accessories', name: 'Accessories'          },
   { id: 'cat-footwear',    name: 'Footwear'             },
   { id: 'cat-bags',        name: 'Bags & leather goods' },
+  { id: 'cat-jewelry',     name: 'Jewelry & watches'    },
 ];
 
 export const BRANDS = [
@@ -67,7 +68,7 @@ export const db = {
         tr: { name: 'Pamuklu kaftan, lacivert', shortDescription: 'Lacivert renkte hafif, nefes alabilen pamuk kaftan.' },
         so: { name: 'Diric pamuko ah, buluug', shortDescription: '' },
       },
-      salesCount: 47, revenueLifetime: 2256, viewsLifetime: 1240, conversionRate: 3.8, returnRate: 2.1,
+      totalSold: 47, revenueLifetime: 2256, viewsLifetime: 1240, conversionRate: 3.8, returnRate: 2.1,
       updatedAt: '2 hours ago', createdAt: '12 days ago',
     },
     {
@@ -85,7 +86,7 @@ export const db = {
       images: [{ url: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400', altText: '', isPrimary: true, sortOrder: 0 }],
       variants: [],
       localizations: { en: { name: 'Linen blazer, beige' } },
-      salesCount: 18, revenueLifetime: 2016, viewsLifetime: 624, conversionRate: 2.9, returnRate: 5.6,
+      totalSold: 18, revenueLifetime: 2016, viewsLifetime: 624, conversionRate: 2.9, returnRate: 5.6,
       updatedAt: '1 day ago', createdAt: '1 month ago',
     },
     {
@@ -99,7 +100,7 @@ export const db = {
       images: [{ url: 'https://images.unsplash.com/photo-1601244005535-a48d21d951ac?w=400', altText: '', isPrimary: true, sortOrder: 0 }],
       variants: [],
       localizations: { en: { name: 'Silk scarf, floral' } },
-      salesCount: 32, revenueLifetime: 768, viewsLifetime: 894, conversionRate: 3.6, returnRate: 1.2,
+      totalSold: 32, revenueLifetime: 768, viewsLifetime: 894, conversionRate: 3.6, returnRate: 1.2,
       updatedAt: '3 hours ago', createdAt: '2 weeks ago',
     },
     {
@@ -111,7 +112,7 @@ export const db = {
       description: '', metaTitle: '', metaDescription: '',
       attributes: [], images: [], variants: [],
       localizations: { en: { name: 'Leather sandals, tan' } },
-      salesCount: 12, revenueLifetime: 912, viewsLifetime: 412, conversionRate: 2.9, returnRate: 8.3,
+      totalSold: 12, revenueLifetime: 912, viewsLifetime: 412, conversionRate: 2.9, returnRate: 8.3,
       updatedAt: '5 days ago', createdAt: '2 months ago',
     },
     {
@@ -122,7 +123,7 @@ export const db = {
       shortDescription: '', description: '', metaTitle: '', metaDescription: '',
       attributes: [], images: [], variants: [],
       localizations: { en: { name: 'Wool sweater, charcoal' } },
-      salesCount: 0, revenueLifetime: 0, viewsLifetime: 0, conversionRate: 0, returnRate: 0,
+      totalSold: 0, revenueLifetime: 0, viewsLifetime: 0, conversionRate: 0, returnRate: 0,
       updatedAt: '6 days ago', createdAt: '6 days ago',
     },
     {
@@ -134,7 +135,7 @@ export const db = {
       description: '', metaTitle: '', metaDescription: '',
       attributes: [], images: [], variants: [],
       localizations: { en: { name: 'Embroidered tunic, ivory' } },
-      salesCount: 24, revenueLifetime: 1536, viewsLifetime: 720, conversionRate: 3.3, returnRate: 1.8,
+      totalSold: 24, revenueLifetime: 1536, viewsLifetime: 720, conversionRate: 3.3, returnRate: 1.8,
       updatedAt: 'Yesterday', createdAt: '3 weeks ago',
     },
     {
@@ -145,7 +146,7 @@ export const db = {
       shortDescription: '', description: '', metaTitle: '', metaDescription: '',
       attributes: [], images: [], variants: [],
       localizations: { en: { name: 'Hand-loom wrap, terracotta' } },
-      salesCount: 8, revenueLifetime: 304, viewsLifetime: 220, conversionRate: 3.6, returnRate: 2.5,
+      totalSold: 8, revenueLifetime: 304, viewsLifetime: 220, conversionRate: 3.6, returnRate: 2.5,
       updatedAt: '4 days ago', createdAt: '5 weeks ago',
     },
   ] as Product[],

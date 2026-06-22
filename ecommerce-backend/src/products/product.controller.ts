@@ -27,10 +27,10 @@ export class ProductController {
     return this.productService.getFeatured(limit);
   }
 
-  @Get(':slug')
-  @ApiOperation({ summary: 'Get product by slug' })
-  async findBySlug(@Param('slug') slug: string) {
-    return this.productService.findBySlug(slug);
+  @Get(':idOrSlug')
+  @ApiOperation({ summary: 'Get a product by id or slug' })
+  async findOne(@Param('idOrSlug') idOrSlug: string) {
+    return this.productService.findByIdOrSlug(idOrSlug);
   }
 
   @Post()

@@ -1,41 +1,21 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, AlertCircle, Save, Eye, ArrowLeft, FileText, ImageIcon, Tag as TagIcon, Hash, Layers, Globe } from 'lucide-react';
+import { Check, AlertCircle, Save, Eye, ArrowLeft, FileText, ImageIcon, ImageOff, Tag as TagIcon, Hash, Layers, Globe } from 'lucide-react';
 import clsx from 'clsx';
 import { Button } from '@/components/primitives/button';
 import { Badge } from '@/components/primitives/badge';
 import { Card } from '@/components/primitives/card';
 import { Alert } from '@/components/primitives/alert';
 import { Field, Input, Textarea, Select } from '@/components/primitives/field';
+import { ConfirmDialog } from '@/components/primitives/confirm-dialog';
 import { VariantsEditor } from '@/components/product/variants-editor';
+import { ImageUrlModal } from '@/components/product/image-url-modal';
 import { CATEGORIES, BRANDS, CURRENCIES, LOCALES } from '@/lib/api/mock-db';
-import { inferDimensions, buildProductDto } from '@/lib/utils';
-import type { Product, ProductDimension, ProductVariant, ProductImage, ProductAttribute, LocalizedFields } from '@/lib/types';
-
-// Shape of the form state — superset of CreateProductDto with UI-only flags
-interface FormState {
-  name: string;
-  categoryId: string;
-  brandId: string;
-  shortDescription: string;
-  description: string;
-  basePrice: string;
-  compareAtPrice: string;
-  currency: string;
-  hasVariants: boolean;
-  stockOnHand: string;
-  dimensions: ProductDimension[];
-  variants: ProductVariant[];
-  images: ProductImage[];
-  attributes: ProductAttribute[];
-  metaTitle: string;
-  metaDescription: string;
-  status: 'draft' | 'active' | 'archived';
-  isFeatured: boolean;
-  localizations: LocalizedFields;
-}
+import { useListInventoryQuery } from '@/lib/api';
+import { inferDimensions, buildProductDto, buildStockSeed } from '@/lib/utils';
+import type { Product, ProductAttribute, LocalizedFields, StockSeed, FormState } from '@/lib/types';
 
 const blankForm: FormState = {
   name: '', categoryId: '', brandId: '',
@@ -59,18 +39,39 @@ const SECTIONS = [
 
 type SectionId = typeof SECTIONS[number]['id'];
 
+// Which sections actually gate publishing. Images and SEO are optional — the
+// progress meter reflects publish-readiness, not "every section filled in".
+const REQUIRED_SECTIONS: SectionId[] = ['basics', 'pricing', 'variants'];
+const OPTIONAL_SECTIONS: SectionId[] = ['images', 'meta'];
+
 interface ProductFormProps {
   mode: 'new' | 'edit';
   existing?: Product;
-  onSave: (dto: ReturnType<typeof buildProductDto>, status: 'draft' | 'active') => Promise<void> | void;
+  onSave: (dto: ReturnType<typeof buildProductDto>, status: 'draft' | 'active', stock: StockSeed) => Promise<void> | void;
   saving?: boolean;
 }
 
 export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps) {
   const router = useRouter();
+  // Which SKUs already have an inventory record. Variants/products with a record
+  // route to Inventory (to preserve movement history); those without get an
+  // editable stock box so a starting quantity can be set right in the form.
+  const { data: inventory = [] } = useListInventoryQuery();
+  const trackedSkus = useMemo(() => new Set(inventory.map(r => r.sku)), [inventory]);
   const [section, setSection] = useState<SectionId>('basics');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeLocale, setActiveLocale] = useState<'en' | 'tr' | 'so' | 'sw' | 'am'>('en');
+  // Tracks whether the user has edited anything, to guard against losing work.
+  const [dirty, setDirty] = useState(false);
+  // Generic confirmation dialog — reused for "discard changes" and "publish
+  // without images". Holds the action to run when the user confirms.
+  const [confirm, setConfirm] = useState<null | {
+    title: string;
+    message?: ReactNode;
+    confirmLabel?: string;
+    variant?: 'primary' | 'danger';
+    onConfirm: () => void | Promise<void>;
+  }>(null);
 
   const [form, setForm] = useState<FormState>(() => {
     if (mode === 'edit' && existing) {
@@ -101,9 +102,30 @@ export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps
     return blankForm;
   });
 
-  const update = (patch: Partial<FormState>) => setForm(f => ({ ...f, ...patch }));
+  const update = (patch: Partial<FormState>) => { setDirty(true); setForm(f => ({ ...f, ...patch })); };
 
-  const validate = () => {
+  // Warn on hard browser navigation (refresh / tab close) while there are
+  // unsaved edits. SPA navigations go through `leave()` below instead.
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
+
+  // Leaving the form (Cancel / Back). Confirms first if there are unsaved edits.
+  const leave = () => {
+    if (!dirty) { router.push('/products'); return; }
+    setConfirm({
+      title: 'Discard unsaved changes?',
+      message: 'You’ve made changes that haven’t been saved. If you leave now, they’ll be lost.',
+      confirmLabel: 'Discard changes',
+      variant: 'danger',
+      onConfirm: () => router.push('/products'),
+    });
+  };
+
+  const validate = (): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!form.name.trim()) e.name = 'Name is required';
     if (form.shortDescription && form.shortDescription.length > 500) e.shortDescription = 'Max 500 characters';
@@ -130,11 +152,21 @@ export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps
         skus.add(v.sku);
       });
     }
+    // Compare-at is the struck-through "was" price — it only makes sense when it's
+    // higher than what the buyer actually pays, otherwise the storefront renders a
+    // backwards "discount". (Skip if the field already flagged a negative value.)
+    if (form.compareAtPrice && !e.compareAtPrice) {
+      const compareAt = Number(form.compareAtPrice);
+      const base = Number(form.basePrice);
+      if (form.basePrice && !isNaN(base) && !isNaN(compareAt) && compareAt <= base) {
+        e.compareAtPrice = 'Compare-at price must be higher than the base price';
+      }
+    }
     setErrors(e);
-    return Object.keys(e).length === 0;
+    return e;
   };
 
-  const sectionHasError = (id: SectionId) => Object.keys(errors).some(k => {
+  const sectionHasError = (id: SectionId, errs: Record<string, string> = errors) => Object.keys(errs).some(k => {
     if (id === 'basics')   return ['name', 'shortDescription'].includes(k);
     if (id === 'pricing')  return ['basePrice', 'compareAtPrice'].includes(k);
     if (id === 'variants') return k.startsWith('variant_') || k.startsWith('dim_') || k === 'variants' || k === 'dimensions';
@@ -150,29 +182,60 @@ export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps
     return false;
   };
 
+  const persist = async (status: 'draft' | 'active') => {
+    const dto = buildProductDto({ ...form, status });
+    let stock: StockSeed;
+    if (mode === 'new') {
+      stock = buildStockSeed(form);
+    } else if (form.hasVariants) {
+      // Seed only variants that don't yet have an inventory record; existing ones
+      // are managed in Inventory so their movement history isn't overwritten.
+      stock = form.variants
+        .filter(v => v.sku && !trackedSkus.has(v.sku) && v.stockOnHand !== '' && v.stockOnHand != null)
+        .map(v => ({ sku: v.sku, onHand: Number(v.stockOnHand) || 0 }));
+    } else if (existing?.sku && !trackedSkus.has(existing.sku) && form.stockOnHand !== '' && form.stockOnHand != null) {
+      stock = [{ sku: existing.sku, onHand: Number(form.stockOnHand) || 0 }];
+    } else {
+      stock = [];
+    }
+    await onSave(dto, status, stock);
+  };
+
   const submit = async (status: 'draft' | 'active') => {
-    if (!validate()) {
-      const firstErrorKey = Object.keys(errors)[0];
-      if (firstErrorKey) {
-        if (['name', 'shortDescription'].includes(firstErrorKey)) setSection('basics');
-        else if (['basePrice', 'compareAtPrice'].includes(firstErrorKey)) setSection('pricing');
-        else if (firstErrorKey.startsWith('variant_') || firstErrorKey.startsWith('dim_') || firstErrorKey === 'variants' || firstErrorKey === 'dimensions') setSection('variants');
-      }
+    const e = validate();
+    if (Object.keys(e).length > 0) {
+      // Jump to the first wizard section (in order) that has an unresolved error.
+      // Use the freshly-computed `e`, not the `errors` state — state updates async,
+      // so reading it here would be one click stale (and empty on the first submit).
+      const firstBad = SECTIONS.find(s => sectionHasError(s.id, e));
+      if (firstBad) setSection(firstBad.id);
       return;
     }
-    const dto = buildProductDto({ ...form, status });
-    await onSave(dto, status);
+    // Soft guard: publishing an imageless product puts a placeholder live on the
+    // storefront. Drafts are fine to save without images.
+    if (status === 'active' && form.images.length === 0) {
+      setConfirm({
+        title: 'Publish without images?',
+        message: 'This product has no images, so buyers will see a placeholder thumbnail. You can publish now and add images later.',
+        confirmLabel: 'Publish anyway',
+        variant: 'primary',
+        onConfirm: () => persist('active'),
+      });
+      return;
+    }
+    await persist(status);
   };
 
   const dtoPreview = useMemo(() => buildProductDto({ ...form, status: form.status }), [form]);
-  const completedCount = SECTIONS.filter(s => s.id !== 'review' && sectionDone(s.id)).length;
+  const requiredDone = REQUIRED_SECTIONS.filter(id => sectionDone(id)).length;
+  const readyToPublish = requiredDone === REQUIRED_SECTIONS.length;
 
   return (
     <>
       {/* Header */}
       <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
         <div>
-          <button onClick={() => router.push('/products')} className="text-xs text-stone-500 hover:text-stone-900 flex items-center gap-1 mb-2">
+          <button onClick={leave} className="text-xs text-stone-500 hover:text-stone-900 flex items-center gap-1 mb-2">
             <ArrowLeft className="w-3 h-3" /> Back to products
           </button>
           <h1 className="font-serif text-3xl text-stone-900">
@@ -183,7 +246,7 @@ export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={() => router.push('/products')}>Cancel</Button>
+          <Button onClick={leave}>Cancel</Button>
           <Button variant="secondary" onClick={() => submit('draft')} disabled={saving}>
             <Save className="w-3.5 h-3.5" /> Save draft
           </Button>
@@ -205,11 +268,13 @@ export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps
           <Card className="overflow-hidden">
             <div className="px-3 py-2.5 border-b border-stone-200 bg-stone-50/60">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-stone-500">Progress</span>
-                <span className="text-stone-700 font-medium">{completedCount} of {SECTIONS.length - 1}</span>
+                <span className="text-stone-500">{readyToPublish ? 'Ready to publish' : 'Required to publish'}</span>
+                {readyToPublish
+                  ? <span className="flex items-center gap-1 text-brand-700 font-medium"><Check className="w-3.5 h-3.5" /> Done</span>
+                  : <span className="text-stone-700 font-medium">{requiredDone} of {REQUIRED_SECTIONS.length}</span>}
               </div>
               <div className="h-1 bg-stone-200 rounded-full mt-2 overflow-hidden">
-                <div className="h-full bg-brand-600 rounded-full transition-all" style={{ width: `${(completedCount / (SECTIONS.length - 1)) * 100}%` }} />
+                <div className="h-full bg-brand-600 rounded-full transition-all" style={{ width: `${(requiredDone / REQUIRED_SECTIONS.length) * 100}%` }} />
               </div>
             </div>
             <nav className="p-1.5">
@@ -217,6 +282,7 @@ export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps
                 const isActive = section === id;
                 const hasError = sectionHasError(id);
                 const isDone = sectionDone(id);
+                const isOptional = OPTIONAL_SECTIONS.includes(id);
                 return (
                   <button
                     key={id}
@@ -233,7 +299,9 @@ export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps
                       ? <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
                       : isDone
                         ? <Check className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-                        : null}
+                        : isOptional
+                          ? <span className="text-2xs text-stone-400 shrink-0">Optional</span>
+                          : null}
                   </button>
                 );
               })}
@@ -265,6 +333,9 @@ export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps
                   stockOnHand={form.stockOnHand}
                   basePrice={form.basePrice}
                   errors={errors}
+                  lockStock={mode === 'edit'}
+                  productSku={existing?.sku}
+                  trackedSkus={trackedSkus}
                   onToggleHasVariants={on => update(on
                     ? { hasVariants: true }
                     : { hasVariants: false, dimensions: [], variants: [] })}
@@ -304,6 +375,17 @@ export function ProductForm({ mode, existing, onSave, saving }: ProductFormProps
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm?.title ?? ''}
+        message={confirm?.message}
+        confirmLabel={confirm?.confirmLabel}
+        variant={confirm?.variant}
+        loading={saving}
+        onConfirm={async () => { await confirm?.onConfirm(); setConfirm(null); }}
+        onClose={() => setConfirm(null)}
+      />
     </>
   );
 }
@@ -380,29 +462,34 @@ function BasicsSection({
           {LOCALES.map(loc => {
             const status = localeStatus(loc.code);
             const isActive = activeLocale === loc.code;
+            // Translations aren't supported by the API yet — only English is editable
+            // so the form never collects data that would be silently dropped on save.
+            const disabled = loc.code !== 'en';
             return (
               <button
                 key={loc.code}
-                onClick={() => onLocaleChange(loc.code as any)}
+                onClick={() => !disabled && onLocaleChange(loc.code as any)}
+                disabled={disabled}
+                title={disabled ? 'Translations coming soon' : undefined}
                 className={clsx(
                   'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                  isActive ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
+                  isActive ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900',
+                  disabled && 'opacity-40 cursor-not-allowed'
                 )}
                 type="button"
               >
                 <span>{loc.flag}</span>
                 <span>{loc.label}</span>
-                {status === 'complete' && <Check className="w-3 h-3 text-brand-600" />}
-                {status === 'partial'  && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+                {disabled && <span className="text-2xs text-stone-400">soon</span>}
+                {!disabled && status === 'complete' && <Check className="w-3 h-3 text-brand-600" />}
+                {!disabled && status === 'partial'  && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
               </button>
             );
           })}
         </div>
-        {activeLocale !== 'en' && (
-          <div className="text-2xs text-stone-500 mt-2">
-            Editing the {LOCALES.find(l => l.code === activeLocale)?.label} translation. Empty fields fall back to English.
-          </div>
-        )}
+        <div className="text-2xs text-stone-500 mt-2">
+          Additional languages are coming soon — products are published in English for now.
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -451,6 +538,21 @@ function BasicsSection({
           />
         </Field>
       </div>
+
+      {activeLocale === 'en' && (
+        <div className="mt-5 pt-5 border-t border-stone-200">
+          <label className="flex items-center gap-2 text-sm text-stone-800 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.isFeatured}
+              onChange={e => update({ isFeatured: e.target.checked })}
+              className="w-4 h-4 rounded border-stone-300 text-brand-700 focus:ring-brand-500"
+            />
+            Feature this product on the storefront
+          </label>
+          <p className="text-xs text-stone-500 mt-1 ml-6">Featured products appear in curated areas like the homepage.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -482,26 +584,32 @@ function PricingSection({ form, update, errors }: { form: FormState; update: (p:
           </Select>
         </Field>
       </div>
-      <div className="mt-5">
-        <label className="flex items-center gap-2 text-sm text-stone-800 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={form.isFeatured}
-            onChange={e => update({ isFeatured: e.target.checked })}
-            className="w-4 h-4 rounded border-stone-300 text-brand-700 focus:ring-brand-500"
-          />
-          Feature this product on storefront
-        </label>
-      </div>
     </div>
   );
 }
 
+// Thumbnail that falls back to a placeholder if the URL fails to load, instead
+// of showing the browser's broken-image icon.
+function ImageThumb({ src, alt }: { src: string; alt: string }) {
+  const [errored, setErrored] = useState(false);
+  if (errored) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-stone-400">
+        <ImageOff className="w-6 h-6" />
+        <span className="text-2xs">Image unavailable</span>
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt={alt} onError={() => setErrored(true)} className="w-full h-full object-cover" />
+  );
+}
+
 function ImagesSection({ form, update }: { form: FormState; update: (p: Partial<FormState>) => void }) {
-  const addImage = () => {
-    const url = window.prompt('Image URL:');
-    if (url) update({ images: [...form.images, { url, altText: '', isPrimary: form.images.length === 0, sortOrder: form.images.length }] });
-  };
+  const [modalOpen, setModalOpen] = useState(false);
+  const addImage = (url: string, altText: string) =>
+    update({ images: [...form.images, { url, altText, isPrimary: form.images.length === 0, sortOrder: form.images.length }] });
   const removeImage = (i: number) => update({ images: form.images.filter((_, idx) => idx !== i) });
   const setPrimary = (i: number) => update({
     images: form.images.map((img, idx) => ({ ...img, isPrimary: idx === i })),
@@ -515,13 +623,13 @@ function ImagesSection({ form, update }: { form: FormState; update: (p: Partial<
       <SectionTitle title="Images" hint="First image is the primary thumbnail" />
       {form.images.length === 0 ? (
         <button
-          onClick={addImage}
+          onClick={() => setModalOpen(true)}
           className="w-full py-12 border-2 border-dashed border-stone-300 rounded-lg text-sm text-stone-600 hover:border-brand-600 hover:text-brand-700 hover:bg-brand-50/50 transition-colors flex flex-col items-center gap-2"
           type="button"
         >
           <ImageIcon className="w-8 h-8 text-stone-400" />
           <div className="font-medium">Add an image URL</div>
-          <div className="text-xs text-stone-500">In production, this would open an uploader</div>
+          <div className="text-xs text-stone-500">Paste a link — we’ll preview it before adding</div>
         </button>
       ) : (
         <>
@@ -529,8 +637,7 @@ function ImagesSection({ form, update }: { form: FormState; update: (p: Partial<
             {form.images.map((img, i) => (
               <div key={i} className="border border-stone-200 rounded-lg overflow-hidden bg-stone-50">
                 <div className="aspect-square bg-stone-100 grid place-items-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img.url} alt={img.altText || ''} className="w-full h-full object-cover" />
+                  <ImageThumb src={img.url} alt={img.altText || ''} />
                 </div>
                 <div className="p-2">
                   <input
@@ -549,9 +656,11 @@ function ImagesSection({ form, update }: { form: FormState; update: (p: Partial<
               </div>
             ))}
           </div>
-          <button onClick={addImage} className="text-xs text-brand-700 hover:text-brand-800 font-medium" type="button">+ Add another image</button>
+          <button onClick={() => setModalOpen(true)} className="text-xs text-brand-700 hover:text-brand-800 font-medium" type="button">+ Add another image</button>
         </>
       )}
+
+      <ImageUrlModal open={modalOpen} onClose={() => setModalOpen(false)} onAdd={addImage} />
     </div>
   );
 }

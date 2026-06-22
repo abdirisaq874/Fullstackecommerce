@@ -47,7 +47,8 @@ export const messagesApi = baseApi.injectEndpoints({
           messages: [...thread.messages, newMsg],
           preview: body.slice(0, 80),
         };
-        db.messages[idx] = updated;
+        // New array, not in-place — the cached array is frozen by RTK/Immer.
+        db.messages = db.messages.map((m, i) => (i === idx ? updated : m));
         return { data: updated };
       },
       invalidatesTags: (_, __, { id }) => [{ type: 'Message', id }, { type: 'Message', id: 'LIST' }],

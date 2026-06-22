@@ -21,8 +21,8 @@ export default function EditProductPage({ params }: { params: { id: string } }) 
       mode="edit"
       existing={product}
       saving={saving}
-      onSave={async (dto, status) => {
-        await updateProduct({ id: product.id, patch: { ...dto, status } }).unwrap();
+      onSave={async (dto, status, stock) => {
+        await updateProduct({ id: product.id, patch: { ...dto, status, stock } }).unwrap();
         toast.success(status === 'active' ? 'Product published' : 'Saved');
         router.push('/products');
       }}

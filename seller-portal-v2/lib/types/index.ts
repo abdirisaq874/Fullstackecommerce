@@ -68,8 +68,9 @@ export interface Product {
   images: ProductImage[];
   variants: ProductVariant[];
   localizations?: LocalizedFields;
-  // Denormalized analytics
-  salesCount: number;
+  // Denormalized analytics — read-only/derived; never part of create/update payloads.
+  // `totalSold` mirrors the backend Product field of the same name.
+  totalSold: number;
   revenueLifetime: number;
   viewsLifetime: number;
   conversionRate?: number;
@@ -112,6 +113,41 @@ export interface CreateProductDto {
   metaTitle?: string;
   metaDescription?: string;
   localizations?: LocalizedFields;
+}
+
+// Inventory seed sent alongside a product create — never embedded in the product
+// document (the backend tracks availability in its own collection). For variants,
+// one entry per SKU; for single-SKU products, one entry with sku=null (the real
+// SKU is assigned when the product is created).
+export interface StockLevel {
+  sku: string | null;
+  onHand: number;
+}
+export type StockSeed = StockLevel[];
+
+// Product form state — superset of CreateProductDto with UI-only flags (variant
+// dimensions, single-SKU stock, the hasVariants toggle). Lives here so the DTO
+// builders in lib/utils can be strongly typed.
+export interface FormState {
+  name: string;
+  categoryId: string;
+  brandId: string;
+  shortDescription: string;
+  description: string;
+  basePrice: string;
+  compareAtPrice: string;
+  currency: string;
+  hasVariants: boolean;
+  stockOnHand: string;
+  dimensions: ProductDimension[];
+  variants: ProductVariant[];
+  images: ProductImage[];
+  attributes: ProductAttribute[];
+  metaTitle: string;
+  metaDescription: string;
+  status: ProductStatus;
+  isFeatured: boolean;
+  localizations: LocalizedFields;
 }
 
 // ────────────────────────────────────────────────────────────

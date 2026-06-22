@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Plus, Filter, Upload, Download, Archive, Star, Search, MoreHorizontal, X, BarChart3 } from 'lucide-react';
+import { Plus, Filter, Upload, Download, Archive, Star, StarOff, Search, MoreHorizontal, X, BarChart3 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/primitives/card';
 import { Button } from '@/components/primitives/button';
@@ -13,10 +13,12 @@ import { Field, Input, Select } from '@/components/primitives/field';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
 import { CsvImportModal } from '@/components/product/csv-import-modal';
+import { ConfirmDialog } from '@/components/primitives/confirm-dialog';
 import { Money } from '@/components/shared/format';
 import { useListProductsQuery, useBulkUpdateProductsMutation, useArchiveProductMutation, useCreateProductMutation } from '@/lib/api';
 import { useToast } from '@/lib/hooks/use-toast';
 import { catName, brandName, productDisplayStatus, toCSV, downloadCSV } from '@/lib/utils';
+import { CATEGORIES } from '@/lib/api/mock-db';
 import type { Product } from '@/lib/types';
 import clsx from 'clsx';
 
@@ -33,6 +35,13 @@ export default function ProductsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [csvOpen, setCsvOpen] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<null | {
+    title: string;
+    message: ReactNode;
+    confirmLabel: string;
+    variant?: 'primary' | 'danger';
+    onConfirm: () => Promise<void> | void;
+  }>(null);
 
   const filtered = useMemo(() => {
     return products.filter(p => {
@@ -64,33 +73,61 @@ export default function ProductsPage() {
     setSelected(checked ? new Set(filtered.map(p => p.id)) : new Set());
   };
 
-  const bulkArchive = async () => {
-    if (!confirm(`Archive ${selected.size} product${selected.size === 1 ? '' : 's'}?`)) return;
-    await bulkUpdate({ ids: Array.from(selected), patch: { status: 'archived' } });
-    toast.success(`${selected.size} products archived`);
-    setSelected(new Set());
-  };
-  const bulkFeature = async () => {
-    await bulkUpdate({ ids: Array.from(selected), patch: { isFeatured: true } });
-    toast.success(`${selected.size} products featured`);
-    setSelected(new Set());
-  };
-  const bulkPublish = async () => {
-    await bulkUpdate({ ids: Array.from(selected), patch: { status: 'active' } });
-    toast.success(`${selected.size} products published`);
-    setSelected(new Set());
-  };
+  const bulkArchive = () => setPendingConfirm({
+    title: 'Archive products',
+    message: `Archive ${selected.size} product${selected.size === 1 ? '' : 's'}? They’ll be hidden from the storefront — you can republish them later.`,
+    confirmLabel: 'Archive',
+    variant: 'danger',
+    onConfirm: async () => {
+      await bulkUpdate({ ids: Array.from(selected), patch: { status: 'archived' } });
+      toast.success(`${selected.size} products archived`);
+      setSelected(new Set());
+    },
+  });
+  const bulkFeature = () => setPendingConfirm({
+    title: 'Feature products',
+    message: `Feature ${selected.size} product${selected.size === 1 ? '' : 's'}? They’ll appear in curated areas like the homepage.`,
+    confirmLabel: 'Feature',
+    variant: 'primary',
+    onConfirm: async () => {
+      await bulkUpdate({ ids: Array.from(selected), patch: { isFeatured: true } });
+      toast.success(`${selected.size} products featured`);
+      setSelected(new Set());
+    },
+  });
+  const bulkUnfeature = () => setPendingConfirm({
+    title: 'Remove from featured',
+    message: `Remove ${selected.size} product${selected.size === 1 ? '' : 's'} from featured areas? They’ll stay published, just no longer highlighted.`,
+    confirmLabel: 'Unfeature',
+    variant: 'primary',
+    onConfirm: async () => {
+      await bulkUpdate({ ids: Array.from(selected), patch: { isFeatured: false } });
+      toast.success(`${selected.size} products unfeatured`);
+      setSelected(new Set());
+    },
+  });
+  const bulkPublish = () => setPendingConfirm({
+    title: 'Publish products',
+    message: `Publish ${selected.size} product${selected.size === 1 ? '' : 's'}? They’ll go live on the storefront immediately.`,
+    confirmLabel: 'Publish',
+    variant: 'primary',
+    onConfirm: async () => {
+      await bulkUpdate({ ids: Array.from(selected), patch: { status: 'active' } });
+      toast.success(`${selected.size} products published`);
+      setSelected(new Set());
+    },
+  });
 
   const exportCsv = () => {
     const rows = (selected.size ? filtered.filter(p => selected.has(p.id)) : filtered).map(p => ({
       sku: p.sku, name: p.name, basePrice: p.basePrice, status: p.status,
-      stock: p.stock ?? '', categoryId: p.categoryId ?? '', salesCount: p.salesCount,
+      stock: p.stock ?? '', categoryId: p.categoryId ?? '', totalSold: p.totalSold,
     }));
     const csv = toCSV(rows, [
       { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Name' },
       { key: 'basePrice', label: 'Base price' }, { key: 'status', label: 'Status' },
       { key: 'stock', label: 'Stock' }, { key: 'categoryId', label: 'Category' },
-      { key: 'salesCount', label: 'Lifetime sales' },
+      { key: 'totalSold', label: 'Lifetime sales' },
     ]);
     downloadCSV(`products-${new Date().toISOString().slice(0, 10)}.csv`, csv);
     toast.success(`Exported ${rows.length} products`);
@@ -106,7 +143,7 @@ export default function ProductsPage() {
         compareAtPrice: r.compareAtPrice ? Number(r.compareAtPrice) : undefined,
         shortDescription: r.shortDescription,
         description: r.description,
-        stockOnHand: r.stockOnHand,
+        stock: r.stockOnHand ? [{ sku: null, onHand: Number(r.stockOnHand) || 0 }] : [],
         status: 'draft',
       } as any);
       count++;
@@ -152,7 +189,7 @@ export default function ProductsPage() {
     },
     {
       key: 'sales', header: 'Sales', className: 'text-right',
-      render: (p) => <span className="tabular-nums text-sm text-stone-600">{p.salesCount}</span>,
+      render: (p) => <span className="tabular-nums text-sm text-stone-600">{p.totalSold}</span>,
     },
     {
       key: 'status', header: 'Status',
@@ -233,11 +270,7 @@ export default function ProductsPage() {
           </div>
           <Select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="!w-auto">
             <option value="">All categories</option>
-            <option value="cat-apparel">Apparel</option>
-            <option value="cat-textiles">Textiles</option>
-            <option value="cat-accessories">Accessories</option>
-            <option value="cat-footwear">Footwear</option>
-            <option value="cat-bags">Bags</option>
+            {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </div>
       </Card>
@@ -252,6 +285,7 @@ export default function ProductsPage() {
             <div className="h-4 w-px bg-brand-200" />
             <Button onClick={bulkPublish} disabled={bulking}>Publish</Button>
             <Button onClick={bulkFeature} disabled={bulking}><Star className="w-3.5 h-3.5" /> Feature</Button>
+            <Button onClick={bulkUnfeature} disabled={bulking}><StarOff className="w-3.5 h-3.5" /> Unfeature</Button>
             <Button onClick={exportCsv}><Download className="w-3.5 h-3.5" /> Export selected</Button>
             <Button variant="danger-ghost" onClick={bulkArchive} disabled={bulking}><Archive className="w-3.5 h-3.5" /> Archive</Button>
             <button onClick={() => setSelected(new Set())} className="ml-auto text-stone-500 hover:text-stone-900 p-1">
@@ -285,6 +319,17 @@ export default function ProductsPage() {
       </Card>
 
       <CsvImportModal open={csvOpen} onClose={() => setCsvOpen(false)} onImport={handleImport} />
+
+      <ConfirmDialog
+        open={!!pendingConfirm}
+        title={pendingConfirm?.title ?? ''}
+        message={pendingConfirm?.message}
+        confirmLabel={pendingConfirm?.confirmLabel}
+        variant={pendingConfirm?.variant}
+        loading={bulking}
+        onConfirm={async () => { await pendingConfirm?.onConfirm(); setPendingConfirm(null); }}
+        onClose={() => setPendingConfirm(null)}
+      />
     </>
   );
 }

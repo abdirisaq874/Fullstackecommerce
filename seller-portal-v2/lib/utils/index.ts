@@ -1,4 +1,4 @@
-import type { ProductOption, ProductDimension, ProductVariant, Product } from '@/lib/types';
+import type { ProductOption, ProductDimension, ProductVariant, Product, StockSeed, FormState, CreateProductDto } from '@/lib/types';
 import { CATEGORIES, BRANDS } from '@/lib/api/mock-db';
 
 // ────────────────────────────────────────────────────────────
@@ -147,7 +147,7 @@ export function regenerateVariants(
 // DTO builder (CreateProductDto shape)
 // ────────────────────────────────────────────────────────────
 
-export function buildProductDto(form: any): any {
+export function buildProductDto(form: FormState): CreateProductDto {
   const dto: any = { name: form.name, basePrice: Number(form.basePrice) };
   if (form.categoryId)       dto.categoryId       = form.categoryId;
   if (form.brandId)          dto.brandId          = form.brandId;
@@ -181,8 +181,24 @@ export function buildProductDto(form: any): any {
   if (form.attributes?.length) dto.attributes = form.attributes.filter((a: any) => a.key && a.value);
   if (form.metaTitle)          dto.metaTitle       = form.metaTitle;
   if (form.metaDescription)    dto.metaDescription = form.metaDescription;
-  if (form.localizations)      dto.localizations   = form.localizations;
-  return dto;
+  // NOTE: localizations intentionally NOT sent — the backend has no such field and
+  // its ValidationPipe runs forbidNonWhitelisted, so sending it would 400. The English
+  // values already live in the top-level name/shortDescription/description fields.
+  return dto as CreateProductDto;
+}
+
+// Inventory seed levels — modelled as a SEPARATE inventory write, never embedded
+// in the product document (the backend tracks availability in its own collection).
+// Variants → one entry per SKU; single-SKU products → one entry with sku=null
+// (the real SKU is assigned when the product is created).
+export function buildStockSeed(form: FormState): StockSeed {
+  if (form.hasVariants && form.variants?.length) {
+    return form.variants.map((v: any) => ({ sku: v.sku, onHand: Number(v.stockOnHand) || 0 }));
+  }
+  if (form.stockOnHand !== '' && form.stockOnHand != null) {
+    return [{ sku: null, onHand: Number(form.stockOnHand) || 0 }];
+  }
+  return [];
 }
 
 // ────────────────────────────────────────────────────────────

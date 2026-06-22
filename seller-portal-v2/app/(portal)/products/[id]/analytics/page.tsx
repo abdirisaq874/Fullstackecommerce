@@ -63,7 +63,7 @@ export default function ProductAnalyticsPage({ params }: { params: { id: string 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <MetricCard label="Views (lifetime)"    value={formatNumber(product.viewsLifetime)}    delta="+8.2% this week" trend="up" />
-        <MetricCard label="Units sold"          value={formatNumber(product.salesCount)}       delta="+47% this week"  trend="up" />
+        <MetricCard label="Units sold"          value={formatNumber(product.totalSold)}       delta="+47% this week"  trend="up" />
         <MetricCard label="Conversion"          value={formatPercent(product.conversionRate ?? 0)} hint="Views → purchase" />
         <MetricCard label="Return rate"         value={formatPercent(product.returnRate ?? 0)} hint="Lower is better" />
       </div>
@@ -97,7 +97,7 @@ export default function ProductAnalyticsPage({ params }: { params: { id: string 
             <Money value={product.revenueLifetime} />
           </div>
           <div className="text-xs text-stone-500 mt-2">
-            From {product.salesCount} units · avg <Money value={product.salesCount ? product.revenueLifetime / product.salesCount : 0} />/unit
+            From {product.totalSold} units · avg <Money value={product.totalSold ? product.revenueLifetime / product.totalSold : 0} />/unit
           </div>
         </Card>
 
@@ -148,7 +148,7 @@ export default function ProductAnalyticsPage({ params }: { params: { id: string 
                   <td className="px-5 py-3 text-stone-900">{v.name || (v.options || []).map(o => o.value).join(' / ')}</td>
                   <td className="px-5 py-3 font-mono text-xs text-stone-600">{v.sku}</td>
                   <td className="px-5 py-3 text-right tabular-nums">{v.stockOnHand}</td>
-                  <td className="px-5 py-3 text-right tabular-nums text-stone-600">{Math.floor(product.salesCount / product.variants.length + (i * 2))}</td>
+                  <td className="px-5 py-3 text-right tabular-nums text-stone-600">{Math.floor(product.totalSold / product.variants.length + (i * 2))}</td>
                 </tr>
               ))}
             </tbody>

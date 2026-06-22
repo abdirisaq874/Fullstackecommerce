@@ -3,7 +3,7 @@ import {
   IsArray, ValidateNested, Min, MaxLength, IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { PaginationDto } from '../../shared/database/pagination.dto';
 
 export class VariantOptionDto {
@@ -70,7 +70,8 @@ export class CreateProductDto {
   @ApiPropertyOptional() @IsOptional() @IsString() metaDescription?: string;
 }
 
-export class UpdateProductDto extends CreateProductDto {}
+// PATCH = partial update: every field optional, validation/Swagger preserved.
+export class UpdateProductDto extends PartialType(CreateProductDto) {}
 
 export class ProductQueryDto extends PaginationDto {
   @ApiPropertyOptional() @IsOptional() @IsString() q?: string;
@@ -79,7 +80,9 @@ export class ProductQueryDto extends PaginationDto {
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(0) priceMin?: number;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(0) priceMax?: number;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(0) rating?: number;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() inStock?: boolean;
+  // NOTE: `inStock` filtering removed until availability is denormalized onto the
+  // product (via inventory events) or moved to the search index — a per-request
+  // lookup into the inventory collection doesn't belong on this hot path.
   @ApiPropertyOptional() @IsOptional() @IsBoolean() featured?: boolean;
   @ApiPropertyOptional({ enum: ['draft', 'active', 'archived'] })
   @IsOptional() @IsEnum(['draft', 'active', 'archived'])

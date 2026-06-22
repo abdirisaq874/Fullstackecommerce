@@ -43,19 +43,19 @@ export class ProductService {
     return product;
   }
 
-  async findBySlug(slug: string): Promise<ProductDocument> {
-    const product = await this.productModel
-      .findOne({ slug, status: 'active' })
-      .populate('categoryId', 'name slug path')
-      .populate('brandId', 'name slug logoUrl');
+  /**
+   * Public product lookup by either a Mongo id or a slug. Clients hold one or
+   * the other depending on context (slug for SEO URLs, id for references), so we
+   * accept both on the single public route. Active-only — drafts/archived are not
+   * exposed publicly (an ownership-checked admin by-id endpoint is the next step).
+   */
+  async findByIdOrSlug(idOrSlug: string): Promise<ProductDocument> {
+    const filter = Types.ObjectId.isValid(idOrSlug)
+      ? { _id: new Types.ObjectId(idOrSlug) }
+      : { slug: idOrSlug };
 
-    if (!product) throw new NotFoundException('Product not found');
-    return product;
-  }
-
-  async findById(id: string): Promise<ProductDocument> {
     const product = await this.productModel
-      .findById(id)
+      .findOne({ ...filter, status: 'active' })
       .populate('categoryId', 'name slug path')
       .populate('brandId', 'name slug logoUrl');
 

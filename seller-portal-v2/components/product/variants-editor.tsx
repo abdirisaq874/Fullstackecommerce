@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Plus, Info } from 'lucide-react';
 import { Badge } from '@/components/primitives/badge';
 import { Alert } from '@/components/primitives/alert';
@@ -17,6 +18,10 @@ interface VariantsEditorProps {
   stockOnHand: number | string;
   basePrice: number | string;
   errors: Record<string, string>;
+  lockStock?: boolean;
+  productSku?: string;
+  /** SKUs that already have an inventory record — these route to Inventory; others get an editable stock box. */
+  trackedSkus?: Set<string>;
   onToggleHasVariants: (on: boolean) => void;
   onDimensionsChange: (dimensions: ProductDimension[], variants: ProductVariant[]) => void;
   onVariantsChange: (variants: ProductVariant[]) => void;
@@ -25,9 +30,13 @@ interface VariantsEditorProps {
 
 export function VariantsEditor({
   productName, hasVariants, dimensions, variants,
-  stockOnHand, basePrice, errors,
+  stockOnHand, basePrice, errors, lockStock, productSku, trackedSkus,
   onToggleHasVariants, onDimensionsChange, onVariantsChange, onStockChange,
 }: VariantsEditorProps) {
+  // A SKU is "tracked" once it has an inventory record. Tracked stock is managed
+  // in Inventory (movement history); untracked stock is editable here so a
+  // starting quantity can be set before the record exists.
+  const isTracked = (sku?: string) => !!sku && !!trackedSkus?.has(sku);
   // Regenerating variants any time dimensions change preserves user-entered data
   // for matching combinations by stable variantKey.
   const regenerate = (next: ProductDimension[]) => {
@@ -74,15 +83,29 @@ export function VariantsEditor({
         This product has multiple variants (sizes, colors, etc.)
       </label>
 
+      {lockStock && (
+        <div className="flex items-start gap-2 text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md px-3 py-2">
+          <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span>Existing stock is managed in <strong>Inventory</strong> so movement history stays accurate. New variants can be given a starting quantity here.</span>
+        </div>
+      )}
+
       {!hasVariants && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Stock on hand" hint="Tracked separately in the inventory collection">
-            <Input
-              type="number" min="0"
-              value={stockOnHand}
-              onChange={e => onStockChange(e.target.value)}
-              placeholder="0"
-            />
+            {lockStock && isTracked(productSku) ? (
+              <div className="flex items-center gap-2 text-sm text-stone-600 h-9">
+                <span>Managed in inventory</span>
+                <Link href={`/inventory/${productSku}`} className="text-brand-700 hover:text-brand-800 font-medium">Open inventory →</Link>
+              </div>
+            ) : (
+              <Input
+                type="number" min="0"
+                value={stockOnHand}
+                onChange={e => onStockChange(e.target.value)}
+                placeholder="0"
+              />
+            )}
           </Field>
         </div>
       )}
@@ -197,13 +220,19 @@ export function VariantsEditor({
                           />
                         </td>
                         <td className="px-4 py-2">
-                          <input
-                            type="number" min="0"
-                            className="w-20 px-2 py-1.5 bg-white border border-stone-200 rounded text-xs tabular-nums outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600/10"
-                            value={v.stockOnHand}
-                            onChange={e => updateVariant(i, { stockOnHand: e.target.value })}
-                            placeholder="0"
-                          />
+                          {lockStock && isTracked(v.sku) ? (
+                            <Link href={`/inventory/${v.sku}`} className="text-xs text-brand-700 hover:text-brand-800 font-medium whitespace-nowrap">
+                              Manage →
+                            </Link>
+                          ) : (
+                            <input
+                              type="number" min="0"
+                              className="w-20 px-2 py-1.5 bg-white border border-stone-200 rounded text-xs tabular-nums outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600/10"
+                              value={v.stockOnHand}
+                              onChange={e => updateVariant(i, { stockOnHand: e.target.value })}
+                              placeholder="0"
+                            />
+                          )}
                         </td>
                       </tr>
                     ))}

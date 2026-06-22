@@ -35,11 +35,22 @@ export const inventoryApi = baseApi.injectEndpoints({
           available: Math.max(0, row.available + delta),
           movements: [{ type: 'manual', delta, reason, date: 'Just now' }, ...(row.movements || [])],
         };
-        db.inventory[idx] = updated;
-        // Cascade to product stock
-        db.products = db.products.map(p =>
-          p.sku === sku ? { ...p, stock: Math.max(0, (p.stock ?? 0) + delta), updatedAt: 'Just now' } : p
-        );
+        // Reassign with a new array — RTK/Immer freezes the cached array after a
+        // query reads it, so an in-place `db.inventory[idx] = …` would throw.
+        db.inventory = db.inventory.map((r, i) => (i === idx ? updated : r));
+        // Cascade to the owning product's headline stock. A variant product's
+        // stock is the SUM of its variants, so recompute from every inventory row
+        // that belongs to the product (by productId) — matching on the single
+        // adjusted SKU would miss variants whose SKU differs from the product's.
+        const productId = updated.productId;
+        if (productId) {
+          const total = db.inventory
+            .filter(r => r.productId === productId)
+            .reduce((s, r) => s + r.onHand, 0);
+          db.products = db.products.map(p =>
+            p.id === productId ? { ...p, stock: total, updatedAt: 'Just now' } : p
+          );
+        }
         return { data: updated };
       },
       invalidatesTags: (_, __, { sku }) => [

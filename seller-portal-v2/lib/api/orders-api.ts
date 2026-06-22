@@ -35,7 +35,8 @@ export const ordersApi = baseApi.injectEndpoints({
           status,
           timeline: [...(order.timeline || []), { event: `Status changed to ${cap(status)}`, date: 'Just now' }],
         };
-        db.orders[idx] = updated;
+        // New array, not in-place — the cached array is frozen by RTK/Immer.
+        db.orders = db.orders.map((o, i) => (i === idx ? updated : o));
         return { data: updated };
       },
       invalidatesTags: (_, __, { id }) => [{ type: 'Order', id }, { type: 'Order', id: 'LIST' }, { type: 'Dashboard', id: 'METRICS' }],
@@ -51,7 +52,8 @@ export const ordersApi = baseApi.injectEndpoints({
           ...order, status: 'shipped', carrier, trackingNumber,
           timeline: [...(order.timeline || []), { event: `Shipped via ${carrier} · ${trackingNumber}`, date: 'Just now' }],
         };
-        db.orders[idx] = updated;
+        // New array, not in-place — the cached array is frozen by RTK/Immer.
+        db.orders = db.orders.map((o, i) => (i === idx ? updated : o));
         return { data: updated };
       },
       invalidatesTags: (_, __, { id }) => [{ type: 'Order', id }, { type: 'Order', id: 'LIST' }, { type: 'Dashboard', id: 'METRICS' }],
