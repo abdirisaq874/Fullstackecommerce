@@ -8,7 +8,7 @@ import { Card } from '@/components/primitives/card';
 import { Button } from '@/components/primitives/button';
 import { Badge } from '@/components/primitives/badge';
 import { Input } from '@/components/primitives/field';
-import { DataTable, type Column } from '@/components/data/data-table';
+import { ResponsiveTable, type ResponsiveColumn } from '@/components/data/responsive-table';
 import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
 import { Money, CountryFlag } from '@/components/shared/format';
 import { useListOrdersQuery, useSetOrderStatusMutation } from '@/lib/api';
@@ -74,16 +74,18 @@ export default function OrdersPage() {
     toast.success(`Exported ${rows.length} orders`);
   };
 
-  const columns: Column<Order>[] = [
-    { key: 'id', header: 'Order', render: (o) => <span className="font-mono text-xs font-medium text-stone-900">{o.id}</span> },
+  const columns: ResponsiveColumn<Order>[] = [
+    { key: 'id', header: 'Order', mobileHidden: true, render: (o) => <span className="font-mono text-xs font-medium text-stone-900">{o.id}</span> },
     {
       key: 'customer', header: 'Customer',
+      mobilePrimary: true,
       render: (o) => (
         <div>
-          <div className="text-sm text-stone-900">{o.customer}</div>
+          <div className="text-sm text-stone-900 font-medium">{o.customer}</div>
           <div className="text-xs text-stone-500 flex items-center gap-1">
             <CountryFlag destination={o.destination} /> {o.destination}
           </div>
+          <div className="md:hidden text-2xs font-mono text-stone-400 mt-0.5">{o.id}</div>
         </div>
       ),
     },
@@ -139,8 +141,13 @@ export default function OrdersPage() {
             <Button onClick={() => bulkMark('processing')}>Mark processing</Button>
             <Button onClick={() => bulkMark('packed')}>Mark packed</Button>
             <Button onClick={exportCsv}><Download className="w-3.5 h-3.5" /> Export</Button>
-            <button onClick={() => setSelected(new Set())} className="ml-auto text-stone-500 hover:text-stone-900 p-1">
-              <X className="w-4 h-4" />
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="ml-auto text-stone-500 hover:text-stone-900 p-1"
+              aria-label="Clear order selection"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </Card>
@@ -152,7 +159,7 @@ export default function OrdersPage() {
         ) : filtered.length === 0 ? (
           <EmptyState title="No orders found" description="When buyers check out, their orders show up here." />
         ) : (
-          <DataTable
+          <ResponsiveTable
             columns={columns}
             data={filtered}
             rowKey={o => o.id}

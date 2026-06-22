@@ -46,21 +46,15 @@ export class InventoryEventsListener {
     items: ReserveItem[];
     previousStatus?: string;
   }) {
-    // Only a still-reserved (unpaid) order should release its reservation.
-    // Once payment completes, stock is DEDUCTED (reserved → 0), so releasing a
-    // reservation that no longer exists would drive `reserved` negative.
+    // Only release reserved stock if the order was still pending (stock was
+    // reserved but never deducted). For confirmed/processing/shipped orders
+    // the stock was already deducted, so a refund-driven restock must be
+    // handled by the refund.processed flow instead — releasing here would
+    // double-credit inventory.
     if (payload.previousStatus && payload.previousStatus !== 'pending') {
-      this.logger.log(
-        `Order ${payload.orderId} cancelled from '${payload.previousStatus}' — stock already deducted, nothing to release`,
-      );
       return;
     }
-
-    if (!payload.items?.length) {
-      this.logger.warn(`Order ${payload.orderId} cancelled with no items to release`);
-      return;
-    }
-
+    if (!payload.items?.length) return;
     this.logger.log(`Releasing stock for cancelled order ${payload.orderId}`);
     await this.inventoryService.release(payload.items, payload.orderId);
   }
@@ -71,16 +65,9 @@ export class InventoryEventsListener {
     items: ReserveItem[];
     restock?: boolean;
   }) {
-    // Only full refunds restock (partial refunds don't map to whole units).
-    if (!payload.restock) {
-      this.logger.log(`Refund for order ${payload.orderId} is partial — not restocking`);
-      return;
-    }
-    if (!payload.items?.length) {
-      this.logger.warn(`Refund for order ${payload.orderId} has no items to restock`);
-      return;
-    }
-    this.logger.log(`Restocking inventory for refunded order ${payload.orderId}`);
+    if (!payload.restock) return;
+    if (!payload.items?.length) return;
+    this.logger.log(`Restocking items for refunded order ${payload.orderId}`);
     await this.inventoryService.restock(payload.items, payload.orderId);
   }
 }

@@ -1,4 +1,53 @@
 /** @type {import('next').NextConfig} */
+
+// NOTE: The Sentry `org` and `project` values below are placeholders. They
+// should be filled in once the Sentry project exists, either manually or
+// by re-running `npx @sentry/wizard@latest -i nextjs`. Without them,
+// source-map upload is skipped but the SDK still reports errors.
+import { withSentryConfig } from '@sentry/nextjs';
+
+const isProd = process.env.NODE_ENV === 'production';
+
+// Content Security Policy
+// NOTE: Next.js requires 'unsafe-inline' for scripts during development (HMR, inline
+// bootstrap scripts). In production we keep 'unsafe-inline' for now because Next.js
+// also emits inline scripts at build-time without nonces unless you switch to the
+// experimental nonce-based CSP. Revisit once we adopt Next.js strict CSP.
+// Tailwind injects inline <style> tags, so 'unsafe-inline' is required for style-src.
+const cspDirectives = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  `connect-src 'self' ${process.env.NEXT_PUBLIC_API_URL || ''} https://*.ingest.sentry.io`,
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+]
+  .join('; ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const securityHeaders = [
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  {
+    key: isProd ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only',
+    value: cspDirectives,
+  },
+  ...(isProd
+    ? [
+        {
+          key: 'Strict-Transport-Security',
+          value: 'max-age=63072000; includeSubDomains; preload',
+        },
+      ]
+    : []),
+];
+
 const nextConfig = {
   reactStrictMode: true,
   images: {
@@ -7,5 +56,31 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.cloudinary.com' },
     ],
   },
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: securityHeaders,
+      },
+    ];
+  },
 };
-export default nextConfig;
+
+export default withSentryConfig(
+  nextConfig,
+  {
+    // Suppress Sentry build-time logs (use `silent: false` to debug uploads).
+    silent: true,
+    // TODO: fill in once the Sentry project is created.
+    org: 'TODO_FILL_IN',
+    project: 'TODO_FILL_IN',
+  },
+  {
+    // Upload a larger set of source maps for better stack traces.
+    widenClientFileUpload: true,
+    // Hide source maps from the public bundle.
+    hideSourceMaps: true,
+    // Tree-shake Sentry logger statements to reduce bundle size.
+    disableLogger: true,
+  },
+);

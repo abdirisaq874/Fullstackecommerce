@@ -1,5 +1,5 @@
-import type { ProductOption, ProductDimension, ProductVariant, Product, StockSeed, FormState, CreateProductDto } from '@/lib/types';
-import { CATEGORIES, BRANDS } from '@/lib/api/mock-db';
+import type { ProductOption, ProductDimension, ProductVariant, Product } from '@/lib/types';
+import { CATEGORIES, BRANDS } from '@/lib/config/reference-data';
 
 // ────────────────────────────────────────────────────────────
 // Formatters
@@ -7,6 +7,54 @@ import { CATEGORIES, BRANDS } from '@/lib/api/mock-db';
 
 export function formatCurrency(amount: number, currency = 'USD'): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2 }).format(amount);
+}
+
+/**
+ * Format an integer-cents money value as a localized currency string.
+ *
+ * Backend money fields (e.g. `amountCents`, `feeCents`, `netCents` on the
+ * seller-finance endpoints) are persisted as integer cents to avoid floating
+ * point drift. The UI takes them as-is and divides by 100 at render time.
+ *
+ * Negative inputs are preserved (used for refund rows where amounts flip sign).
+ */
+export function formatCurrencyCents(cents: number | null | undefined, currency = 'USD'): string {
+  const value = typeof cents === 'number' && Number.isFinite(cents) ? cents / 100 : 0;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2 }).format(value);
+}
+
+/**
+ * Render an ISO date as a short, locale-friendly "relative" hint.
+ *
+ * Examples (now = Jun 10 2026):
+ *   "2026-06-12T00:00:00Z" → "in 2 days"
+ *   "2026-06-10T00:00:00Z" → "today"
+ *   "2026-06-08T00:00:00Z" → "2 days ago"
+ *   undefined/invalid       → "—"
+ */
+export function formatRelativeTime(iso?: string | null): string {
+  if (!iso) return '—';
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return '—';
+  const diffMs = target.getTime() - Date.now();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'today';
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  if (Math.abs(diffDays) >= 30) {
+    return rtf.format(Math.round(diffDays / 30), 'month');
+  }
+  if (Math.abs(diffDays) >= 7) {
+    return rtf.format(Math.round(diffDays / 7), 'week');
+  }
+  return rtf.format(diffDays, 'day');
+}
+
+/** Short YYYY-MM-DD slice of an ISO timestamp; safe on undefined. */
+export function formatDateShort(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' });
 }
 
 export function formatNumber(n: number): string {
@@ -147,7 +195,7 @@ export function regenerateVariants(
 // DTO builder (CreateProductDto shape)
 // ────────────────────────────────────────────────────────────
 
-export function buildProductDto(form: FormState): CreateProductDto {
+export function buildProductDto(form: any): any {
   const dto: any = { name: form.name, basePrice: Number(form.basePrice) };
   if (form.categoryId)       dto.categoryId       = form.categoryId;
   if (form.brandId)          dto.brandId          = form.brandId;
@@ -181,24 +229,8 @@ export function buildProductDto(form: FormState): CreateProductDto {
   if (form.attributes?.length) dto.attributes = form.attributes.filter((a: any) => a.key && a.value);
   if (form.metaTitle)          dto.metaTitle       = form.metaTitle;
   if (form.metaDescription)    dto.metaDescription = form.metaDescription;
-  // NOTE: localizations intentionally NOT sent — the backend has no such field and
-  // its ValidationPipe runs forbidNonWhitelisted, so sending it would 400. The English
-  // values already live in the top-level name/shortDescription/description fields.
-  return dto as CreateProductDto;
-}
-
-// Inventory seed levels — modelled as a SEPARATE inventory write, never embedded
-// in the product document (the backend tracks availability in its own collection).
-// Variants → one entry per SKU; single-SKU products → one entry with sku=null
-// (the real SKU is assigned when the product is created).
-export function buildStockSeed(form: FormState): StockSeed {
-  if (form.hasVariants && form.variants?.length) {
-    return form.variants.map((v: any) => ({ sku: v.sku, onHand: Number(v.stockOnHand) || 0 }));
-  }
-  if (form.stockOnHand !== '' && form.stockOnHand != null) {
-    return [{ sku: null, onHand: Number(form.stockOnHand) || 0 }];
-  }
-  return [];
+  if (form.localizations)      dto.localizations   = form.localizations;
+  return dto;
 }
 
 // ────────────────────────────────────────────────────────────

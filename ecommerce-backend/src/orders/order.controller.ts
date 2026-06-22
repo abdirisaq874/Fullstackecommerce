@@ -1,11 +1,9 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Patch, Body, Param, Query,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { OrderService } from './order.service';
-import { Auth, CurrentUser, JwtAuthGuard } from '../auth/guards/auth.guards';
-import { OrderOwnershipGuard, LoadedOrder } from './guards/order-ownership.guard';
-import { OrderDocument } from './schemas/order.schema';
+import { Auth, CurrentUser } from '../auth/guards/auth.guards';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import { PaginationDto } from '../shared/database/pagination.dto';
 import {
@@ -121,12 +119,14 @@ export class OrderController {
   }
 
   @Get(':id')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, OrderOwnershipGuard)
+  @Auth()
   @ApiOperation({ summary: 'Get order by ID' })
-  async findById(@LoadedOrder() order: OrderDocument) {
-    // Authorization (owner-or-admin) and loading are handled by the guards above.
-    return order;
+  async findById(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @CurrentUser('_id') userId: string,
+    @CurrentUser('role') role: string,
+  ) {
+    return this.orderService.findByIdForUser(id, userId, role);
   }
 
   @Patch(':id/cancel')

@@ -24,22 +24,25 @@ export class AdminController {
     private readonly productService: ProductService,
   ) {}
 
+  // NOTE: dashboard reads are admin+seller for now so the seller portal can
+  // render. The aggregations are still GLOBAL; per-seller scoping is TODO
+  // (filter by item.sellerId in admin.service.ts aggregations).
   @Get('dashboard/stats')
-  @Auth('admin')
+  @Auth('admin', 'seller')
   @ApiOperation({ summary: 'Get dashboard statistics' })
   async getDashboardStats() {
     return this.adminService.getDashboardStats();
   }
 
   @Get('dashboard/revenue')
-  @Auth('admin')
+  @Auth('admin', 'seller')
   @ApiOperation({ summary: 'Get revenue chart data' })
   async getRevenueChart(@Query('days') days?: number) {
     return this.adminService.getRevenueChart(days || 7);
   }
 
   @Get('dashboard/orders-by-status')
-  @Auth('admin')
+  @Auth('admin', 'seller')
   @ApiOperation({ summary: 'Get orders grouped by status' })
   async getOrdersByStatus() {
     return this.adminService.getOrdersByStatus();

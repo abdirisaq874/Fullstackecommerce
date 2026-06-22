@@ -138,6 +138,22 @@ export class OrderService {
     return order;
   }
 
+  async findByIdForUser(
+    orderId: string,
+    userId: string,
+    role?: string,
+  ): Promise<OrderDocument> {
+    if (role === 'admin') {
+      return this.findById(orderId);
+    }
+    const order = await this.orderModel.findOne({
+      _id: new Types.ObjectId(orderId),
+      userId: new Types.ObjectId(userId),
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return order;
+  }
+
   async findByOrderNumber(orderNumber: string): Promise<OrderDocument> {
     const order = await this.orderModel.findOne({ orderNumber });
     if (!order) throw new NotFoundException('Order not found');

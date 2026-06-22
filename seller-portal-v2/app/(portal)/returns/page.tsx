@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/primitives/card';
 import { Badge } from '@/components/primitives/badge';
+// TODO (H5): migrate this page to <ResponsiveTable> so rows collapse to cards
+// below the md breakpoint — see /orders and /products for the pattern.
 import { DataTable, type Column } from '@/components/data/data-table';
 import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
 import { Money } from '@/components/shared/format';

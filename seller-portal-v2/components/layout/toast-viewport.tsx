@@ -31,8 +31,13 @@ export function ToastViewport() {
           <div key={t.id} className={clsx(bg, 'text-white px-4 py-2.5 rounded-lg shadow-lg text-sm flex items-center gap-2.5 animate-in')}>
             <Icon className="w-4 h-4 shrink-0" />
             <span className="flex-1">{t.text}</span>
-            <button onClick={() => dispatch(dismissToast(t.id))} className="opacity-60 hover:opacity-100 shrink-0">
-              <X className="w-3.5 h-3.5" />
+            <button
+              type="button"
+              onClick={() => dispatch(dismissToast(t.id))}
+              className="opacity-60 hover:opacity-100 shrink-0"
+              aria-label="Dismiss notification"
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>
         );

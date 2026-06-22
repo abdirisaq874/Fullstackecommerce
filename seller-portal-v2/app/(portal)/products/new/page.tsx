@@ -14,8 +14,8 @@ export default function NewProductPage() {
     <ProductForm
       mode="new"
       saving={isLoading}
-      onSave={async (dto, status, stock) => {
-        await createProduct({ ...dto, status, stock }).unwrap();
+      onSave={async (dto, status) => {
+        await createProduct({ ...dto, status }).unwrap();
         toast.success(status === 'active' ? 'Product published' : 'Draft saved');
         router.push('/products');
       }}

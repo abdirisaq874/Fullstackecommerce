@@ -87,8 +87,7 @@ lib/
 │   ├── messages-api.ts
 │   ├── dashboard-api.ts
 │   ├── ui-slice.ts        # Non-server state (toasts, palette, panels)
-│   ├── store.ts
-│   └── mock-db.ts         # ← In-memory dev data; delete when wiring real backend
+│   └── store.ts
 ├── hooks/                 # useToast, useHotkey
 ├── types/                 # All domain types (Product, Order, Return, etc.)
 └── utils/                 # Formatters, status mapping, DTO builder, CSV utils, variant logic
@@ -123,9 +122,7 @@ lib/
    }),
    ```
 
-3. Delete `lib/api/mock-db.ts` once real endpoints are live.
-
-4. The DTO shape sent by `buildProductDto()` in `lib/utils/index.ts` already matches your `CreateProductDto` exactly — no changes needed there.
+3. The DTO shape sent by `buildProductDto()` in `lib/utils/index.ts` already matches your `CreateProductDto` exactly — no changes needed there.
 
 5. Cache invalidation tags are already wired correctly. A mutation on one screen will automatically refetch the lists everywhere.
 

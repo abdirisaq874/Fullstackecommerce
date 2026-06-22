@@ -49,15 +49,21 @@ export class ProductController {
   async update(
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateProductDto,
+    @CurrentUser('_id') userId: string,
+    @CurrentUser('role') role: string,
   ) {
-    return this.productService.update(id, dto);
+    return this.productService.update(id, dto, userId, role);
   }
 
   @Delete(':id')
   @Auth('admin', 'seller')
   @ApiOperation({ summary: 'Archive a product' })
-  async archive(@Param('id', ParseObjectIdPipe) id: string) {
-    return this.productService.archive(id);
+  async archive(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @CurrentUser('_id') userId: string,
+    @CurrentUser('role') role: string,
+  ) {
+    return this.productService.archive(id, userId, role);
   }
 }
 

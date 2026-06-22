@@ -83,10 +83,13 @@ export class InventoryService {
       return;
     }
     for (const item of items) {
-      await this.inventoryModel.findOneAndUpdate(
-        { variantSku: item.variantSku },
+      const updated = await this.inventoryModel.findOneAndUpdate(
+        { variantSku: item.variantSku, reserved: { $gte: item.quantity } },
         { $inc: { quantity: -item.quantity, reserved: -item.quantity } },
       );
+      if (!updated) {
+        throw new BadRequestException(`Inventory deduction failed for SKU: ${item.variantSku}`);
+      }
 
       await this.movementModel.create({
         variantSku: item.variantSku,
@@ -151,10 +154,16 @@ export class InventoryService {
 
   private async releaseReservations(items: ReserveItem[], orderId: string): Promise<void> {
     for (const item of items) {
-      await this.inventoryModel.findOneAndUpdate(
-        { variantSku: item.variantSku },
+      const updated = await this.inventoryModel.findOneAndUpdate(
+        { variantSku: item.variantSku, reserved: { $gte: item.quantity } },
         { $inc: { reserved: -item.quantity } },
       );
+      if (!updated) {
+        await this.inventoryModel.updateOne(
+          { variantSku: item.variantSku },
+          { $set: { reserved: 0 } },
+        );
+      }
 
       await this.movementModel.create({
         variantSku: item.variantSku,

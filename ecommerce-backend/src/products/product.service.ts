@@ -135,9 +135,19 @@ export class ProductService {
     return new PaginatedResponseDto(products, total, query.page, query.limit);
   }
 
-  async update(id: string, dto: UpdateProductDto): Promise<ProductDocument> {
-    const product = await this.productModel.findByIdAndUpdate(
-      id,
+  async update(
+    id: string,
+    dto: UpdateProductDto,
+    actorId: string,
+    role?: string,
+  ): Promise<ProductDocument> {
+    const filter: FilterQuery<Product> = {
+      _id: new Types.ObjectId(id),
+      ...(role === 'admin' ? {} : { sellerId: new Types.ObjectId(actorId) }),
+    };
+
+    const product = await this.productModel.findOneAndUpdate(
+      filter,
       {
         $set: {
           ...dto,
@@ -158,9 +168,14 @@ export class ProductService {
     return product;
   }
 
-  async archive(id: string): Promise<ProductDocument> {
-    const product = await this.productModel.findByIdAndUpdate(
-      id,
+  async archive(id: string, actorId: string, role?: string): Promise<ProductDocument> {
+    const filter: FilterQuery<Product> = {
+      _id: new Types.ObjectId(id),
+      ...(role === 'admin' ? {} : { sellerId: new Types.ObjectId(actorId) }),
+    };
+
+    const product = await this.productModel.findOneAndUpdate(
+      filter,
       { $set: { status: 'archived' } },
       { new: true },
     );

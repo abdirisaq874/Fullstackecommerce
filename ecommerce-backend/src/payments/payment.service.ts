@@ -1,5 +1,9 @@
 import {
-  Injectable, Logger, BadRequestException, NotFoundException,
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -7,10 +11,9 @@ import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import * as crypto from 'crypto';
 import { Payment } from './schemas/payment.schema';
-import { ProcessedWebhookEvent } from './schemas/processed-webhook-event.schema';
 import { EventBusService } from '../shared/events/event-bus.service';
-import { OrderService } from '../orders/order.service';
-import { idsEqual } from '../shared/utils/helpers';
+import { Order } from '../orders/schemas/order.schema';
+import { ReserveItem } from '../inventory/inventory.service';
 
 @Injectable()
 export class PaymentService {
@@ -19,11 +22,9 @@ export class PaymentService {
 
   constructor(
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
-    @InjectModel(ProcessedWebhookEvent.name)
-    private processedEventModel: Model<ProcessedWebhookEvent>,
+    @InjectModel(Order.name) private orderModel: Model<Order>,
     private config: ConfigService,
     private eventBus: EventBusService,
-    private orderService: OrderService,
   ) {
     this.stripe = new Stripe(config.get<string>('stripe.secretKey') || '', {
       apiVersion: '2023-10-16',
@@ -31,54 +32,30 @@ export class PaymentService {
   }
 
   /**
-   * Secure entry point for the create-intent route.
-   *
-   * The amount and currency are derived from the server-side order — the client
-   * never supplies them. Also enforces that the caller owns the order, the order
-   * is still awaiting payment, and no payment is already in flight for it.
-   */
-  async createIntentForOrder(
-    orderId: string,
-    userId: string,
-  ): Promise<{ clientSecret: string; paymentId: string }> {
-    const order = await this.orderService.findById(orderId);
-
-    // Ownership — 404 (not 403) so a non-owner can't probe which orders exist.
-    if (!idsEqual(order.userId, userId)) {
-      throw new NotFoundException('Order not found');
-    }
-
-    // Only an unpaid, still-open order can be paid.
-    if (order.status !== 'pending') {
-      throw new BadRequestException('Order is not awaiting payment');
-    }
-
-    // Block duplicate charges for the same order.
-    const existing = await this.paymentModel.findOne({
-      orderId: order._id,
-      status: { $in: ['processing', 'completed'] },
-    });
-    if (existing) {
-      throw new BadRequestException('Payment already initiated for this order');
-    }
-
-    // Amount + currency come from the order, NEVER from the request body.
-    return this.createPaymentIntent(order._id.toString(), order.total, order.currency);
-  }
-
-  /**
    * Create a Stripe PaymentIntent for an order.
    * Returns the client_secret for frontend Stripe Elements.
-   *
-   * Internal: `amount`/`currency` are trusted here, so this must only be called
-   * with server-derived values (see createIntentForOrder).
    */
   async createPaymentIntent(
     orderId: string,
-    amount: number,
-    currency: string,
+    userId: string,
+    role?: string,
     metadata?: Record<string, string>,
   ): Promise<{ clientSecret: string; paymentId: string }> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (role !== 'admin' && order.userId.toString() !== userId) {
+      throw new ForbiddenException('Not your order');
+    }
+    if (order.status === 'cancelled') {
+      throw new BadRequestException('Order is cancelled');
+    }
+    if (typeof order.total !== 'number' || order.total <= 0) {
+      throw new BadRequestException('Invalid order total');
+    }
+
+    const amount = order.total;
+    const currency = (order.currency || 'USD').toLowerCase();
+
     // Deterministic idempotency key: same order+amount+currency always produces the same key
     const idempotencyKey = crypto
       .createHash('sha256')
@@ -90,7 +67,7 @@ export class PaymentService {
     const paymentIntent = await this.stripe.paymentIntents.create(
       {
         amount: Math.round(amount * 100), // Stripe uses cents
-        currency: currency.toLowerCase(),
+        currency,
         metadata: {
           orderId,
           ...metadata,
@@ -99,17 +76,30 @@ export class PaymentService {
       { idempotencyKey },
     );
 
-    // Record in our DB
-    const payment = await this.paymentModel.create({
-      orderId: new Types.ObjectId(orderId),
-      method: 'credit_card',
-      provider: 'stripe',
-      providerTxId: paymentIntent.id,
-      idempotencyKey,
-      amount,
-      currency,
-      status: 'processing',
-    });
+    const payment = await this.paymentModel.findOneAndUpdate(
+      { providerTxId: paymentIntent.id },
+      {
+        $setOnInsert: {
+          orderId: new Types.ObjectId(orderId),
+          method: 'credit_card',
+          provider: 'stripe',
+          providerTxId: paymentIntent.id,
+          idempotencyKey,
+          processedStripeEventIds: [],
+        },
+        $set: {
+          amount,
+          currency: currency.toUpperCase(),
+          status: 'processing',
+        },
+      },
+      { new: true, upsert: true },
+    );
+
+    await this.orderModel.updateOne(
+      { _id: order._id },
+      { $set: { stripePaymentIntentId: paymentIntent.id } },
+    );
 
     await this.eventBus.emit('payment.processing', {
       paymentId: payment._id.toString(),
@@ -139,110 +129,103 @@ export class PaymentService {
       throw new BadRequestException(`Webhook signature verification failed: ${err.message}`);
     }
 
-    // ─── Idempotency gate (claim-first) ───
-    // Atomically claim this event id via the unique index. A duplicate-key error
-    // means we've already handled it (Stripe retry / replay) → skip safely.
-    try {
-      await this.processedEventModel.create({ eventId: event.id, type: event.type });
-    } catch (err: any) {
-      if (err?.code === 11000) {
-        this.logger.warn(`Duplicate webhook event ${event.id} (${event.type}) — skipping`);
-        return;
-      }
-      throw err;
-    }
+    this.logger.log(`Stripe webhook: ${event.type}`);
 
-    this.logger.log(`Stripe webhook: ${event.type} (${event.id})`);
-
-    try {
-      switch (event.type) {
-        case 'payment_intent.succeeded': {
-          const pi = event.data.object as Stripe.PaymentIntent;
-          await this.handlePaymentSuccess(pi);
-          break;
-        }
-        case 'payment_intent.payment_failed': {
-          const pi = event.data.object as Stripe.PaymentIntent;
-          await this.handlePaymentFailure(pi);
-          break;
-        }
+    switch (event.type) {
+      case 'payment_intent.succeeded': {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        await this.handlePaymentSuccess(pi, event.id);
+        break;
       }
-    } catch (err) {
-      // Processing failed after claiming — release the claim so Stripe's retry
-      // (or a manual replay) can legitimately reprocess this event.
-      await this.processedEventModel.deleteOne({ eventId: event.id });
-      throw err;
+      case 'payment_intent.payment_failed': {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        await this.handlePaymentFailure(pi, event.id);
+        break;
+      }
     }
   }
 
-  private async handlePaymentSuccess(pi: Stripe.PaymentIntent): Promise<void> {
-    // Only transition (and emit) if not already completed — idempotent even if
-    // the same PI is seen more than once outside the event-id dedup.
-    const payment = await this.paymentModel.findOneAndUpdate(
-      { providerTxId: pi.id, status: { $ne: 'completed' } },
-      { $set: { status: 'completed', paidAt: new Date() } },
-      { new: true },
-    );
-
-    if (!payment) {
-      this.logger.warn(`No actionable payment for Stripe PI ${pi.id} (missing or already completed)`);
+  private async handlePaymentSuccess(pi: Stripe.PaymentIntent, eventId: string): Promise<void> {
+    const existing = await this.paymentModel.findOne({ providerTxId: pi.id });
+    if (!existing) {
+      this.logger.warn(`Payment not found for Stripe PI: ${pi.id}`);
       return;
     }
+    if (existing.processedStripeEventIds?.includes(eventId)) {
+      this.logger.warn(`Duplicate Stripe event ignored: ${eventId} for PI ${pi.id}`);
+      return;
+    }
+
+    const expectedAmountCents = Math.round(existing.amount * 100);
+    const receivedAmountCents = pi.amount_received ?? pi.amount ?? 0;
+    if (receivedAmountCents !== expectedAmountCents) {
+      throw new BadRequestException('Payment amount mismatch');
+    }
+    if ((pi.currency || '').toUpperCase() !== (existing.currency || '').toUpperCase()) {
+      throw new BadRequestException('Payment currency mismatch');
+    }
+
+    const order = await this.orderModel.findById(existing.orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    const items = this.toReserveItems(order.items);
+
+    const payment = await this.paymentModel.findOneAndUpdate(
+      { _id: existing._id, processedStripeEventIds: { $ne: eventId } },
+      {
+        $set: { status: 'completed', paidAt: new Date() },
+        $addToSet: { processedStripeEventIds: eventId },
+      },
+      { new: true },
+    );
+    if (!payment) return;
 
     await this.eventBus.emit('payment.completed', {
       paymentId: payment._id.toString(),
       orderId: payment.orderId.toString(),
       amount: payment.amount,
-      // Inventory needs the line items to deduct stock — load from the order.
-      items: await this.getOrderItems(payment.orderId.toString()),
+      currency: payment.currency,
+      items,
     });
 
     this.logger.log(`Payment completed: ${payment._id} for order ${payment.orderId}`);
   }
 
-  private async handlePaymentFailure(pi: Stripe.PaymentIntent): Promise<void> {
+  private async handlePaymentFailure(pi: Stripe.PaymentIntent, eventId: string): Promise<void> {
     const failureMessage =
       pi.last_payment_error?.message || 'Payment failed';
 
-    // Only transition (and emit) if not already failed — idempotent on replay.
+    const existing = await this.paymentModel.findOne({ providerTxId: pi.id });
+    if (!existing) {
+      this.logger.warn(`Payment not found for Stripe PI: ${pi.id}`);
+      return;
+    }
+    if (existing.processedStripeEventIds?.includes(eventId)) {
+      this.logger.warn(`Duplicate Stripe event ignored: ${eventId} for PI ${pi.id}`);
+      return;
+    }
+
+    const order = await this.orderModel.findById(existing.orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    const items = this.toReserveItems(order.items);
+
     const payment = await this.paymentModel.findOneAndUpdate(
-      { providerTxId: pi.id, status: { $ne: 'failed' } },
-      { $set: { status: 'failed', failureReason: failureMessage } },
+      { _id: existing._id, processedStripeEventIds: { $ne: eventId } },
+      {
+        $set: { status: 'failed', failureReason: failureMessage },
+        $addToSet: { processedStripeEventIds: eventId },
+      },
       { new: true },
     );
-
     if (!payment) return;
 
     await this.eventBus.emit('payment.failed', {
       paymentId: payment._id.toString(),
       orderId: payment.orderId.toString(),
       reason: failureMessage,
-      // Inventory needs the line items to release the reservation — load from the order.
-      items: await this.getOrderItems(payment.orderId.toString()),
+      items,
     });
 
     this.logger.log(`Payment failed: ${payment._id} — ${failureMessage}`);
-  }
-
-  /**
-   * Map an order's line items into the {productId, variantSku, quantity} shape
-   * the inventory module expects. Returns [] (and logs) if the order can't be
-   * loaded, so a webhook never crashes over a missing/odd order.
-   */
-  private async getOrderItems(
-    orderId: string,
-  ): Promise<Array<{ productId: string; variantSku: string; quantity: number }>> {
-    try {
-      const order = await this.orderService.findById(orderId);
-      return (order.items || []).map((i: any) => ({
-        productId: i.productId?.toString(),
-        variantSku: i.variantSku,
-        quantity: i.quantity,
-      }));
-    } catch {
-      this.logger.warn(`Could not load items for order ${orderId} — emitting empty items`);
-      return [];
-    }
   }
 
   async processRefund(
@@ -259,6 +242,9 @@ export class PaymentService {
     }
 
     const refundAmount = amount || payment.amount;
+    if (refundAmount <= 0 || refundAmount > payment.amount) {
+      throw new BadRequestException('Invalid refund amount');
+    }
 
     const refund = await this.stripe.refunds.create({
       payment_intent: payment.providerTxId,
@@ -269,17 +255,27 @@ export class PaymentService {
     payment.status = isFullRefund ? 'refunded' : 'partially_refunded';
     await payment.save();
 
+    const order = await this.orderModel.findById(payment.orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    const items = this.toReserveItems(order.items);
+
     await this.eventBus.emit('refund.processed', {
       orderId: payment.orderId.toString(),
       paymentId: payment._id.toString(),
       refundAmount,
       stripeRefundId: refund.id,
-      // Only a full refund returns all units to stock; partial refunds don't
-      // map cleanly to whole units, so we don't auto-restock those.
       restock: isFullRefund,
-      items: isFullRefund ? await this.getOrderItems(payment.orderId.toString()) : [],
+      items,
     });
 
     return { refundId: refund.id, amount: refundAmount, status: payment.status };
+  }
+
+  private toReserveItems(items: Array<{ variantSku: string; productId: any; quantity: number }>): ReserveItem[] {
+    return items.map((i) => ({
+      variantSku: i.variantSku,
+      productId: i.productId.toString(),
+      quantity: i.quantity,
+    }));
   }
 }

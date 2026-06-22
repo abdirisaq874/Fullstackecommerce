@@ -75,6 +75,7 @@ export class AuthService {
       firstName: dto.firstName,
       lastName: dto.lastName,
       phone: dto.phone,
+      ...(dto.role ? { role: dto.role } : {}),
     });
 
     await this.eventBus.emit('user.registered', {
