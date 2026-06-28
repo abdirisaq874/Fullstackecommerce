@@ -140,4 +140,43 @@ export class CouponService {
     await this.eventBus.emit('coupon.deactivated', { couponId: id });
     return updated;
   }
+
+  /**
+   * Customer-facing validation: check a code against a cart subtotal and return
+   * the discount. Coupon monetary fields are stored in integer cents while cart
+   * subtotals are in major currency units, so cents are converted (÷100) here.
+   * Returns the discount in major units. Throws BadRequest with a clear reason.
+   */
+  async validateForCart(
+    code: string,
+    subtotal: number,
+  ): Promise<{ coupon: CouponDocument; discount: number }> {
+    const coupon = await this.couponModel.findOne({ code: code.trim().toUpperCase() });
+    if (!coupon || !coupon.isActive) throw new BadRequestException('Invalid coupon code');
+
+    const now = new Date();
+    if (coupon.startsAt && coupon.startsAt > now) throw new BadRequestException('This coupon is not active yet');
+    if (coupon.expiresAt && coupon.expiresAt < now) throw new BadRequestException('This coupon has expired');
+    if (coupon.usageLimit !== undefined && coupon.redemptionsCount >= coupon.usageLimit) {
+      throw new BadRequestException('This coupon has reached its usage limit');
+    }
+
+    const minPurchase = (coupon.minPurchaseAmount ?? 0) / 100;
+    if (subtotal < minPurchase) {
+      throw new BadRequestException(`A minimum purchase of ${minPurchase.toFixed(2)} is required`);
+    }
+
+    let discount: number;
+    if (coupon.discountType === 'percentage') {
+      discount = (subtotal * coupon.discountValue) / 100;
+      if (coupon.maxDiscountAmount !== undefined) {
+        discount = Math.min(discount, coupon.maxDiscountAmount / 100);
+      }
+    } else {
+      discount = coupon.discountValue / 100;
+    }
+    discount = Math.min(Math.round(discount * 100) / 100, subtotal);
+
+    return { coupon, discount };
+  }
 }

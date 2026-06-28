@@ -1,0 +1,48 @@
+# ───────────────────────────────────────────────────────────────────────────
+# Data-services stack for the GCE VM: OpenSearch + Redis.
+#
+# Reached ONLY over the private VPC (Cloud Run -> Serverless VPC connector ->
+# this VM's internal IP). The GCP firewall blocks 6379/9200 from the internet;
+# Redis additionally requires a password. OpenSearch security stays disabled
+# because it is never publicly reachable.
+#
+# This file is written to /opt/ecom/docker-compose.yml by the VM startup script
+# in deploy/gcloud-setup.sh. REDIS_PASSWORD is read from instance metadata.
+# ───────────────────────────────────────────────────────────────────────────
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: ecom-opensearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g"   # ~half the VM's 8 GB
+      - DISABLE_SECURITY_PLUGIN=true            # safe: private VPC only
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ecom-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  opensearch-data:
+  redis-data:

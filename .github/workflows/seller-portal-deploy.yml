@@ -1,0 +1,61 @@
+name: Seller Portal Deploy
+
+# Builds the seller-portal (Next.js) image and rolls out a new Cloud Run
+# revision. NEXT_PUBLIC_* values are inlined at build time and passed as build
+# args; SENTRY_AUTH_TOKEN is optional (source-map upload only).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'seller-portal-v2/**'
+      - '.github/workflows/seller-portal-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SERVICE: seller-portal
+      REGION: ${{ vars.GCP_REGION }}
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/seller-portal
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker auth
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL="${{ vars.BACKEND_URL }}" \
+            --build-arg NEXT_PUBLIC_APP_URL="${{ vars.SELLER_APP_URL }}" \
+            --build-arg NEXT_PUBLIC_SENTRY_DSN="${{ vars.NEXT_PUBLIC_SENTRY_DSN }}" \
+            --build-arg NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="${{ vars.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}" \
+            --build-arg SENTRY_AUTH_TOKEN="${{ secrets.SENTRY_AUTH_TOKEN }}" \
+            -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" ./seller-portal-v2
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE:${{ github.sha }}" \
+            --region "$REGION" \
+            --project "$PROJECT_ID" \
+            --port 8080 \
+            --allow-unauthenticated \
+            --quiet

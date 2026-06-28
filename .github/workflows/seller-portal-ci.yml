@@ -27,7 +27,7 @@ jobs:
           cache-dependency-path: 'seller-portal-v2/package-lock.json'
 
       - name: Install dependencies
-        run: cd seller-portal-v2 && npm ci
+        run: cd seller-portal-v2 && npm install --no-audit --no-fund
 
       - name: Lint
         run: cd seller-portal-v2 && npm run lint

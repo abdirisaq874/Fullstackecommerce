@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import * as bcrypt from 'bcrypt';
 import { User, UserDocument } from './schemas/user.schema';
 import { UpdateProfileDto, CreateAddressDto, UpdateAddressDto } from './dto/user.dto';
 
@@ -12,6 +13,19 @@ export class UserService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
     return user;
+  }
+
+  /** Change password for a logged-in user (verifies the current password). */
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ message: string }> {
+    const user = await this.userModel.findById(userId).select('+passwordHash');
+    if (!user) throw new NotFoundException('User not found');
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) throw new BadRequestException('Current password is incorrect');
+
+    user.passwordHash = newPassword; // pre-save hook re-hashes
+    await user.save();
+    return { message: 'Password updated successfully' };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<UserDocument> {

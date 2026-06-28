@@ -14,7 +14,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed": "ts-node src/database/seed.ts"
+    "seed": "ts-node src/database/seed.ts",
+    "seed:categories": "ts-node src/database/seed-categories.ts",
+    "search:reindex": "ts-node src/database/reindex-search.ts"
   },
   "dependencies": {
     "@nestjs/bull": "^10.1.0",
@@ -30,6 +32,7 @@
     "@nestjs/swagger": "^7.2.0",
     "@nestjs/terminus": "^10.3.0",
     "@nestjs/throttler": "^6.5.0",
+    "@opensearch-project/opensearch": "^2.13.0",
     "bcrypt": "^5.1.1",
     "bull": "^4.12.0",
     "class-transformer": "^0.5.1",

@@ -50,6 +50,8 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  // Emit a self-contained server bundle for the Docker/Cloud Run image.
+  output: 'standalone',
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'images.unsplash.com' },

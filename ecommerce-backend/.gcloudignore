@@ -1,0 +1,10 @@
+# What NOT to upload to Cloud Build (the image is built fresh inside the build).
+node_modules
+dist
+.git
+.env
+.env.*
+!.env.example
+coverage
+.qodo
+test

@@ -18,6 +18,10 @@ class UpdateQuantityDto {
   @ApiProperty() @IsNumber() @Min(0) quantity: number;
 }
 
+class ApplyCouponDto {
+  @ApiProperty() @IsString() code: string;
+}
+
 @ApiTags('cart')
 @Controller('cart')
 export class CartController {
@@ -69,5 +73,22 @@ export class CartController {
   async clearCart(@CurrentUser('_id') userId: string) {
     await this.cartService.clearCart(userId);
     return { message: 'Cart cleared' };
+  }
+
+  @Post('coupon')
+  @Auth()
+  @ApiOperation({ summary: 'Apply a coupon code to the cart' })
+  async applyCoupon(
+    @CurrentUser('_id') userId: string,
+    @Body() dto: ApplyCouponDto,
+  ) {
+    return this.cartService.applyCoupon(userId, dto.code);
+  }
+
+  @Delete('coupon')
+  @Auth()
+  @ApiOperation({ summary: 'Remove the applied coupon from the cart' })
+  async removeCoupon(@CurrentUser('_id') userId: string) {
+    return this.cartService.removeCoupon(userId);
   }
 }

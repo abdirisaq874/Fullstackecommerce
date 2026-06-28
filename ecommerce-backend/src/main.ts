@@ -23,9 +23,13 @@ async function bootstrap() {
     }),
   );
 
-  // CORS
+  // CORS — FRONTEND_URL may be a comma-separated list (storefront + seller portal).
+  const corsOrigins = (process.env.FRONTEND_URL || 'http://localhost:3001')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+    origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'stripe-signature', 'X-Request-Id'],

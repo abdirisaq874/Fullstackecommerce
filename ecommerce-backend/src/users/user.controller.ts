@@ -1,12 +1,18 @@
 import {
   Controller, Get, Patch, Post, Delete, Body, Param,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiProperty } from '@nestjs/swagger';
+import { IsString, MinLength } from 'class-validator';
 import { UserService } from './user.service';
 import { Auth, CurrentUser } from '../auth/guards/auth.guards';
 import { UpdateProfileDto, CreateAddressDto, UpdateAddressDto } from './dto/user.dto';
 import { UserDocument } from './schemas/user.schema';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
+
+class ChangePasswordDto {
+  @ApiProperty() @IsString() currentPassword: string;
+  @ApiProperty() @IsString() @MinLength(8) newPassword: string;
+}
 
 @ApiTags('users')
 @Controller('users')
@@ -28,6 +34,16 @@ export class UserController {
     @Body() dto: UpdateProfileDto,
   ) {
     return this.userService.updateProfile(userId, dto);
+  }
+
+  @Patch('me/password')
+  @Auth()
+  @ApiOperation({ summary: 'Change password (logged-in user)' })
+  async changePassword(
+    @CurrentUser('_id') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.userService.changePassword(userId, dto.currentPassword, dto.newPassword);
   }
 
   // ─── Addresses ───

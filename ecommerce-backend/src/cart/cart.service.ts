@@ -7,6 +7,7 @@ import { Product } from '../products/schemas/product.schema';
 import { InventoryService } from '../inventory/inventory.service';
 import { RedisService } from '../shared/database/redis.service';
 import { roundMoney } from '../shared/utils/helpers';
+import { CouponService } from '../coupons/coupon.service';
 
 @Injectable()
 export class CartService {
@@ -18,6 +19,7 @@ export class CartService {
     private inventoryService: InventoryService,
     private redis: RedisService,
     private config: ConfigService,
+    private couponService: CouponService,
   ) {
     this.guestCartTtl = this.config.get<number>('app.guestCartTtlDays', 7) * 86400;
   }
@@ -170,19 +172,52 @@ export class CartService {
   async getCartSummary(userId: string) {
     const cart = await this.getCart(userId);
     if (!cart || cart.items.length === 0) {
-      return { items: [], subtotal: 0, itemCount: 0 };
+      return { items: [], subtotal: 0, itemCount: 0, couponCode: undefined, discountAmount: 0 };
     }
 
-    const subtotal = cart.items.reduce(
-      (sum, item) => sum + roundMoney(item.unitPrice * item.quantity),
-      0,
+    const subtotal = roundMoney(
+      cart.items.reduce((sum, item) => sum + roundMoney(item.unitPrice * item.quantity), 0),
     );
+
+    let couponCode = cart.couponCode || undefined;
+    let discountAmount = 0;
+    if (couponCode) {
+      try {
+        const { discount } = await this.couponService.validateForCart(couponCode, subtotal);
+        discountAmount = discount;
+      } catch {
+        couponCode = undefined; // coupon became invalid (expired / threshold) — silently drop
+        discountAmount = 0;
+      }
+    }
 
     return {
       items: cart.items,
-      subtotal: roundMoney(subtotal),
+      subtotal,
       itemCount: cart.items.reduce((sum, item) => sum + item.quantity, 0),
+      couponCode,
+      discountAmount,
     };
+  }
+
+  /** Validate + attach a coupon to the user's cart. Throws if the code is invalid. */
+  async applyCoupon(userId: string, code: string) {
+    const { subtotal } = await this.getCartSummary(userId);
+    if (subtotal <= 0) throw new BadRequestException('Your cart is empty');
+    await this.couponService.validateForCart(code, subtotal); // throws BadRequest if invalid
+    await this.cartModel.findOneAndUpdate(
+      { userId: new Types.ObjectId(userId) },
+      { $set: { couponCode: code.trim().toUpperCase() } },
+    );
+    return this.getCartSummary(userId);
+  }
+
+  async removeCoupon(userId: string) {
+    await this.cartModel.findOneAndUpdate(
+      { userId: new Types.ObjectId(userId) },
+      { $set: { couponCode: null } },
+    );
+    return this.getCartSummary(userId);
   }
 
   /**

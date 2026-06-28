@@ -19,6 +19,24 @@ export const BrandSchema = SchemaFactory.createForClass(Brand);
 // ─── Category ───
 export type CategoryDocument = HydratedDocument<Category>;
 
+/**
+ * A facetable attribute for products in a category. Drives the dynamic,
+ * search-aware filters: each entry says "expose attribute X as a filter of
+ * this type, labelled like this". `attributeKey` matches Product.attributes[].key.
+ */
+export interface CategoryFacet {
+  attributeKey: string;
+  type: 'terms' | 'range' | 'color';
+  label: Record<string, string>; // { en: "Color", so: "Midabka" }
+  order?: number;
+  unit?: string; // e.g. "GB", "mm" for range facets
+}
+
+export interface CategoryLocale {
+  name?: string;
+  description?: string;
+}
+
 @Schema({ timestamps: true, collection: 'categories' })
 export class Category {
   @Prop({ type: Types.ObjectId, ref: 'Category' })
@@ -32,6 +50,21 @@ export class Category {
   @Prop({ default: true }) isActive: boolean;
   @Prop({ default: 0 }) depth: number;
   @Prop({ index: true }) path: string; // "electronics.phones.android"
+
+  // ── Materialized ancestor chain (root → immediate parent) for fast subtree queries ──
+  @Prop({ type: [Types.ObjectId], ref: 'Category', default: [], index: true })
+  ancestors: Types.ObjectId[];
+
+  // ── Localized display text (en, so, …) ──
+  @Prop({ type: Object, default: {} })
+  localizations: Record<string, CategoryLocale>;
+
+  // ── Map to Google Product Taxonomy (Shopping / ads) ──
+  @Prop() googleTaxonomyId?: number;
+
+  // ── Which product attributes are exposed as filters for this category ──
+  @Prop({ type: [Object], default: [] })
+  facets: CategoryFacet[];
 }
 export const CategorySchema = SchemaFactory.createForClass(Category);
 
@@ -113,13 +146,38 @@ export class Product {
   @Prop() metaTitle?: string;
   @Prop() metaDescription?: string;
 
-  // Per-locale buyer-facing text (en/tr/so/sw/am). Stored as a flexible object;
-  // English remains canonical in the top-level name/description fields.
-  @Prop({ type: Object })
-  localizations?: Record<string, { name?: string; shortDescription?: string; description?: string }>;
+  // ─── Localized text (en, so, …) — persisted from the seller portal ───
+  @Prop({ type: Object, default: {} })
+  localizations: Record<string, ProductLocale>;
+
+  // ─── Translation provenance, so humans can override machine output ───
+  @Prop({ type: Object, default: {} })
+  localizationMeta: Record<string, ProductLocaleMeta>;
+
+  // ─── Semantic vector (multilingual model; en & so share one space) ───
+  @Prop({ type: [Number], default: undefined }) embedding?: number[];
+  @Prop() embeddingModel?: string;
+  @Prop() embeddingInput?: string; // hash of source text → skip re-embed when unchanged
+  @Prop() embeddedAt?: Date;
+
+  // ─── Denormalized ranking signals (refreshed by a job) ───
+  @Prop({ type: Object, default: {} })
+  searchSignals: { popularity?: number; salesVelocity?: number; lastOrderedAt?: Date };
 
   @Prop({ default: false }) isDeleted: boolean;
   @Prop() deletedAt?: Date;
+}
+
+export interface ProductLocale {
+  name?: string;
+  shortDescription?: string;
+  description?: string;
+}
+
+export interface ProductLocaleMeta {
+  source?: 'human' | 'machine';
+  translatedAt?: Date;
+  model?: string;
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);

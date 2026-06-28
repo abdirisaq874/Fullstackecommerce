@@ -13,6 +13,7 @@ import authConfig from './config/auth.config';
 import redisConfig from './config/redis.config';
 import stripeConfig from './config/stripe.config';
 import mailConfig from './config/mail.config';
+import searchConfig from './config/search.config';
 
 import { SharedModule } from './shared/shared.module';
 import { AuthModule } from './auth/auth.module';
@@ -34,13 +35,15 @@ import { ReturnsModule } from './returns/returns.module';
 import { MessagesModule } from './messages/messages.module';
 import { CouponModule } from './coupons/coupon.module';
 import { SearchModule } from './search/search.module';
+import { SearchEngineModule } from './search-engine/search-engine.module';
+import { ReviewsModule } from './reviews/reviews.module';
 
 @Module({
   imports: [
     // ═══ Configuration ═══
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, authConfig, redisConfig, stripeConfig, mailConfig],
+      load: [appConfig, databaseConfig, authConfig, redisConfig, stripeConfig, mailConfig, searchConfig],
       envFilePath: ['.env', '.env.local'],
     }),
 
@@ -106,6 +109,8 @@ import { SearchModule } from './search/search.module';
     MessagesModule,
     CouponModule,
     SearchModule,
+    SearchEngineModule,
+    ReviewsModule,
   ],
   providers: [
     // Apply rate limiting globally
