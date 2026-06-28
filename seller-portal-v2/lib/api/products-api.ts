@@ -119,6 +119,19 @@ export const productsApi = baseApi.injectEndpoints({
       transformResponse: () => undefined,
       invalidatesTags: [{ type: 'Product', id: 'LIST' }, { type: 'Dashboard', id: 'METRICS' }],
     }),
+
+    // Bulk create (CSV import) — one request for many products, so a large import
+    // stays under the global per-minute rate limit instead of one request per row.
+    bulkCreateProducts: builder.mutation<{ created: number; failed: number }, { products: unknown[] }>({
+      query: (body) => ({
+        url: '/products/bulk-create',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (res: ResponseEnvelope<{ created: number; failed: number }> | { created: number; failed: number }) =>
+        unwrapEnvelope(res),
+      invalidatesTags: [{ type: 'Product', id: 'LIST' }, { type: 'Inventory', id: 'LIST' }, { type: 'Dashboard', id: 'METRICS' }],
+    }),
   }),
 });
 
@@ -129,4 +142,5 @@ export const {
   useUpdateProductMutation,
   useArchiveProductMutation,
   useBulkUpdateProductsMutation,
+  useBulkCreateProductsMutation,
 } = productsApi;

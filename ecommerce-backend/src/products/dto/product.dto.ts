@@ -1,6 +1,6 @@
 import {
   IsString, IsNumber, IsOptional, IsEnum, IsBoolean,
-  IsArray, ValidateNested, Min, MaxLength, IsNotEmpty,
+  IsArray, ArrayNotEmpty, IsMongoId, ValidateNested, Min, MaxLength, IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
@@ -37,6 +37,33 @@ export class AttributeDto {
   @ApiProperty() @IsString() value: string;
 }
 
+// Buyer-facing text for a single locale. All optional — empty fields fall back
+// to the canonical English (the top-level name/shortDescription/description).
+export class LocalizedTextDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() name?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) shortDescription?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
+}
+
+// Per-locale translations (en / tr / so / sw / am) — matches the seller-portal
+// LocalizedFields shape. English is canonical; the rest are optional overrides.
+export class ProductLocalizationsDto {
+  @ApiPropertyOptional({ type: LocalizedTextDto })
+  @IsOptional() @ValidateNested() @Type(() => LocalizedTextDto) en?: LocalizedTextDto;
+
+  @ApiPropertyOptional({ type: LocalizedTextDto })
+  @IsOptional() @ValidateNested() @Type(() => LocalizedTextDto) tr?: LocalizedTextDto;
+
+  @ApiPropertyOptional({ type: LocalizedTextDto })
+  @IsOptional() @ValidateNested() @Type(() => LocalizedTextDto) so?: LocalizedTextDto;
+
+  @ApiPropertyOptional({ type: LocalizedTextDto })
+  @IsOptional() @ValidateNested() @Type(() => LocalizedTextDto) sw?: LocalizedTextDto;
+
+  @ApiPropertyOptional({ type: LocalizedTextDto })
+  @IsOptional() @ValidateNested() @Type(() => LocalizedTextDto) am?: LocalizedTextDto;
+}
+
 export class CreateProductDto {
   @ApiProperty() @IsString() @IsNotEmpty() name: string;
   @ApiPropertyOptional() @IsOptional() @IsString() categoryId?: string;
@@ -46,6 +73,7 @@ export class CreateProductDto {
   @ApiProperty() @IsNumber() @Min(0) basePrice: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) compareAtPrice?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() currency?: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) stock?: number;
   @ApiPropertyOptional({ enum: ['draft', 'active', 'archived'] })
   @IsOptional() @IsEnum(['draft', 'active', 'archived'])
   status?: string;
@@ -68,6 +96,12 @@ export class CreateProductDto {
 
   @ApiPropertyOptional() @IsOptional() @IsString() metaTitle?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() metaDescription?: string;
+
+  @ApiPropertyOptional({ type: ProductLocalizationsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ProductLocalizationsDto)
+  localizations?: ProductLocalizationsDto;
 }
 
 // PATCH = partial update: every field optional, validation/Swagger preserved.
@@ -102,4 +136,33 @@ export class CreateBrandDto {
   @ApiPropertyOptional() @IsOptional() @IsString() logoUrl?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() website?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
+}
+
+// Fields safe to change across many products at once (Publish / Archive / Feature).
+export class BulkProductPatchDto {
+  @ApiPropertyOptional({ enum: ['draft', 'active', 'archived'] })
+  @IsOptional() @IsEnum(['draft', 'active', 'archived'])
+  status?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional() @IsBoolean()
+  isFeatured?: boolean;
+}
+
+export class BulkUpdateProductsDto {
+  @ApiProperty({ type: [String], description: 'Product ids to update' })
+  @IsArray() @ArrayNotEmpty() @IsMongoId({ each: true })
+  ids: string[];
+
+  @ApiProperty({ type: BulkProductPatchDto })
+  @ValidateNested() @Type(() => BulkProductPatchDto)
+  patch: BulkProductPatchDto;
+}
+
+// Create many products in one request (CSV bulk import). Keeps the import to a
+// few requests instead of one-per-row, staying under the global rate limit.
+export class BulkCreateProductsDto {
+  @ApiProperty({ type: [CreateProductDto], description: 'Products to create' })
+  @IsArray() @ArrayNotEmpty() @ValidateNested({ each: true }) @Type(() => CreateProductDto)
+  products: CreateProductDto[];
 }

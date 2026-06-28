@@ -89,6 +89,10 @@ export class Product {
   @Prop({ type: Number }) compareAtPrice?: number;
   @Prop({ default: 'USD' }) currency: string;
 
+  // Simple product-level stock count (denormalized for quick display/management).
+  // The Inventory module remains available for advanced multi-warehouse tracking.
+  @Prop({ type: Number, default: 0, min: 0 }) stock: number;
+
   @Prop({ enum: ['draft', 'active', 'archived'], default: 'draft', index: true })
   status: string;
 
@@ -108,6 +112,11 @@ export class Product {
 
   @Prop() metaTitle?: string;
   @Prop() metaDescription?: string;
+
+  // Per-locale buyer-facing text (en/tr/so/sw/am). Stored as a flexible object;
+  // English remains canonical in the top-level name/description fields.
+  @Prop({ type: Object })
+  localizations?: Record<string, { name?: string; shortDescription?: string; description?: string }>;
 
   @Prop({ default: false }) isDeleted: boolean;
   @Prop() deletedAt?: Date;

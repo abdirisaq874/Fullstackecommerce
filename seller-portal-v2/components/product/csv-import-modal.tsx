@@ -16,6 +16,7 @@ const TARGET_FIELDS = [
   { value: 'stockOnHand', label: 'Stock on hand' },
   { value: 'shortDescription', label: 'Short description' },
   { value: 'description', label: 'Full description' },
+  { value: 'imageUrl', label: 'Image URL' },
   { value: 'categoryName', label: 'Category' },
   { value: 'brandName', label: 'Brand' },
 ];

@@ -205,6 +205,13 @@ export function buildProductDto(form: any): any {
   if (form.currency)         dto.currency         = form.currency;
   if (form.status)           dto.status           = form.status;
   if (form.isFeatured)       dto.isFeatured       = true;
+  // Simple stock model: one product-level quantity — sum of variant stock when the
+  // product has variants, otherwise the single "stock on hand" value.
+  if (form.hasVariants && form.variants?.length) {
+    dto.stock = form.variants.reduce((s: number, v: any) => s + (Number(v.stockOnHand) || 0), 0);
+  } else if (form.stockOnHand !== '' && form.stockOnHand != null) {
+    dto.stock = Number(form.stockOnHand) || 0;
+  }
   if (form.variants?.length) {
     dto.variants = form.variants.map((v: any) => {
       const o: any = { sku: v.sku };
@@ -229,6 +236,8 @@ export function buildProductDto(form: any): any {
   if (form.attributes?.length) dto.attributes = form.attributes.filter((a: any) => a.key && a.value);
   if (form.metaTitle)          dto.metaTitle       = form.metaTitle;
   if (form.metaDescription)    dto.metaDescription = form.metaDescription;
+  // The backend's CreateProductDto now accepts a `localizations` object
+  // (en/tr/so/sw/am), so we send the per-locale translations through.
   if (form.localizations)      dto.localizations   = form.localizations;
   return dto;
 }

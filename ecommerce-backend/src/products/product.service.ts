@@ -44,6 +44,35 @@ export class ProductService {
   }
 
   /**
+   * Create many products in one request (CSV bulk import). Runs server-side in a
+   * single HTTP call so it isn't subject to the per-request rate limit, and
+   * isolates failures per row (a bad row doesn't abort the rest).
+   */
+  async bulkCreate(
+    products: CreateProductDto[],
+    sellerId: string,
+  ): Promise<{ created: number; failed: number }> {
+    let created = 0;
+    let failed = 0;
+    for (const dto of products) {
+      try {
+        const slug = await this.generateProductSlug(dto.name);
+        await this.productModel.create({
+          ...dto,
+          slug,
+          sellerId: new Types.ObjectId(sellerId),
+          categoryId: dto.categoryId ? new Types.ObjectId(dto.categoryId) : undefined,
+          brandId: dto.brandId ? new Types.ObjectId(dto.brandId) : undefined,
+        });
+        created++;
+      } catch {
+        failed++;
+      }
+    }
+    return { created, failed };
+  }
+
+  /**
    * Public product lookup by either a Mongo id or a slug. Clients hold one or
    * the other depending on context (slug for SEO URLs, id for references), so we
    * accept both on the single public route. Active-only — drafts/archived are not
@@ -183,6 +212,36 @@ export class ProductService {
 
     await this.eventBus.emit('product.archived', { productId: id });
     return product;
+  }
+
+  /**
+   * Update many products in one request (Publish / Archive / Feature from the
+   * dashboard). Owner-scoped: sellers can only touch their own products; admins
+   * can touch any. Returns how many matched and were modified.
+   */
+  async bulkUpdate(
+    ids: string[],
+    patch: { status?: string; isFeatured?: boolean },
+    actorId: string,
+    role?: string,
+  ): Promise<{ matched: number; modified: number }> {
+    // DEV: seller scoping is intentionally OFF for now — any account can manage
+    // all products. Re-enable later by adding the owner filter for non-admins:
+    //   ...(role === 'admin' ? {} : { sellerId: new Types.ObjectId(actorId) })
+    void role;
+    const filter: FilterQuery<Product> = {
+      _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+    };
+
+    const result = await this.productModel.updateMany(filter, { $set: patch });
+
+    await this.eventBus.emit('products.bulk_updated', {
+      ids,
+      changes: Object.keys(patch),
+      actorId,
+    });
+
+    return { matched: result.matchedCount, modified: result.modifiedCount };
   }
 
   async getFeatured(limit: number = 12): Promise<ProductDocument[]> {

@@ -14,7 +14,8 @@ import { Alert } from '@/components/primitives/alert';
 import { Field, Input, Textarea, Select } from '@/components/primitives/field';
 import { VariantsEditor } from '@/components/product/variants-editor';
 import { ConfirmDialog } from '@/components/primitives/confirm-dialog';
-import { CATEGORIES, BRANDS, CURRENCIES, LOCALES } from '@/lib/config/reference-data';
+import { CURRENCIES, LOCALES } from '@/lib/config/reference-data';
+import { useGetCategoriesQuery, useGetBrandsQuery } from '@/lib/api/catalog-api';
 import { inferDimensions, buildProductDto } from '@/lib/utils';
 import {
   productFormSchema,
@@ -80,11 +81,18 @@ const blankDefaults: ProductFormValues = {
   localizations: { en: {} },
 };
 
+// A populated category/brand ref comes back as { _id, name, ... }; an unpopulated
+// one is a plain id string. Normalize to the id so the form <select> matches.
+function refId(v: unknown): string {
+  if (v && typeof v === 'object' && '_id' in (v as object)) return String((v as { _id: unknown })._id);
+  return v ? String(v) : '';
+}
+
 function defaultsFromExisting(existing: Product): ProductFormValues {
   return {
     name: existing.name,
-    categoryId: existing.categoryId ?? '',
-    brandId: existing.brandId ?? '',
+    categoryId: refId(existing.categoryId),
+    brandId: refId(existing.brandId),
     shortDescription: existing.shortDescription ?? '',
     description: existing.description ?? '',
     status: existing.status,
@@ -527,6 +535,9 @@ interface BasicsSectionProps {
 function BasicsSection({
   control, register, setValue, getValues, watch, errors, activeLocale, onLocaleChange,
 }: BasicsSectionProps) {
+  // Real categories/brands from the backend (replaces hard-coded reference-data).
+  const { data: categories = [] } = useGetCategoriesQuery();
+  const { data: brands = [] } = useGetBrandsQuery();
   // Watch the localizations object so the locale-status pills stay live.
   const localizations = (watch('localizations') ?? { en: {} }) as LocalizedFields;
   const enValues = {
@@ -608,35 +619,29 @@ function BasicsSection({
           {LOCALES.map((loc) => {
             const status = localeStatus(loc.code);
             const isActive = activeLocale === loc.code;
-            // Translations aren't supported by the backend yet (CreateProductDto has no
-            // localizations field + forbidNonWhitelisted), so only English is editable —
-            // the form never collects data that would be dropped or rejected on save.
-            const disabled = loc.code !== 'en';
             return (
               <button
                 key={loc.code}
-                onClick={() => !disabled && onLocaleChange(loc.code as ProductLocaleCode)}
-                disabled={disabled}
-                title={disabled ? 'Translations coming soon' : undefined}
+                onClick={() => onLocaleChange(loc.code as ProductLocaleCode)}
                 className={clsx(
                   'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
                   isActive ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900',
-                  disabled && 'opacity-40 cursor-not-allowed',
                 )}
                 type="button"
               >
                 <span>{loc.flag}</span>
                 <span>{loc.label}</span>
-                {disabled && <span className="text-2xs text-stone-400">soon</span>}
-                {!disabled && status === 'complete' && <Check className="w-3 h-3 text-brand-600" />}
-                {!disabled && status === 'partial'  && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+                {status === 'complete' && <Check className="w-3 h-3 text-brand-600" />}
+                {status === 'partial'  && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
               </button>
             );
           })}
         </div>
-        <div className="text-2xs text-stone-500 mt-2">
-          Additional languages are coming soon — products are published in English for now.
-        </div>
+        {activeLocale !== 'en' && (
+          <div className="text-2xs text-stone-500 mt-2">
+            Editing the {LOCALES.find((l) => l.code === activeLocale)?.label} translation. Empty fields fall back to English.
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -658,13 +663,13 @@ function BasicsSection({
             <Field label="Category" hint="Used for buyer filtering">
               <Select {...register('categoryId')}>
                 <option value="">— None —</option>
-                {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {categories.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
               </Select>
             </Field>
             <Field label="Brand">
               <Select {...register('brandId')}>
                 <option value="">— None —</option>
-                {BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {brands.map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
               </Select>
             </Field>
           </>

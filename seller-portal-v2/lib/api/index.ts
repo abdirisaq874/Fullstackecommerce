@@ -2,6 +2,7 @@ export * from './base-api';
 export * from './store';
 export * from './ui-slice';
 export * from './products-api';
+export * from './catalog-api';
 export * from './orders-api';
 export * from './inventory-api';
 export * from './returns-api';

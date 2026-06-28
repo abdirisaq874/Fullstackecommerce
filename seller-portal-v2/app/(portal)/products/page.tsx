@@ -15,19 +15,36 @@ import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states'
 import { CsvImportModal } from '@/components/product/csv-import-modal';
 import { ConfirmDialog } from '@/components/primitives/confirm-dialog';
 import { Money } from '@/components/shared/format';
-import { useListProductsQuery, useBulkUpdateProductsMutation, useArchiveProductMutation, useCreateProductMutation } from '@/lib/api';
+import { useListProductsQuery, useBulkUpdateProductsMutation, useArchiveProductMutation, useBulkCreateProductsMutation, useGetCategoriesQuery, useGetBrandsQuery } from '@/lib/api';
 import { useToast } from '@/lib/hooks/use-toast';
-import { catName, brandName, productDisplayStatus, toCSV, downloadCSV } from '@/lib/utils';
+import { productDisplayStatus, toCSV, downloadCSV } from '@/lib/utils';
 import { CATEGORIES } from '@/lib/config/reference-data';
 import type { Product } from '@/lib/types';
 import clsx from 'clsx';
 
 export default function ProductsPage() {
   const router = useRouter();
-  const { data: products = [], isLoading, isError, refetch } = useListProductsQuery();
+  // The backend's GET /products returns a single status per call (no "all" mode),
+  // so we fetch each status and merge — this powers the All/Active/Drafts/Archived
+  // tabs and their counts. (Mongo returns `_id`; map it to the `id` the UI expects.)
+  const activeQ = useListProductsQuery({ status: 'active', limit: 100 });
+  const draftQ = useListProductsQuery({ status: 'draft', limit: 100 });
+  const archivedQ = useListProductsQuery({ status: 'archived', limit: 100 });
+  const products = useMemo<Product[]>(() => {
+    const withId = (arr?: Product[]) =>
+      (arr ?? []).map(p => ({ ...p, id: p.id ?? (p as unknown as { _id?: string })._id ?? '' }));
+    return [...withId(activeQ.data), ...withId(draftQ.data), ...withId(archivedQ.data)];
+  }, [activeQ.data, draftQ.data, archivedQ.data]);
+  const isLoading = activeQ.isLoading || draftQ.isLoading || archivedQ.isLoading;
+  // Only show the error screen if EVERY query failed — one failed status must not
+  // blank the whole page (it shows whatever did load).
+  const isError = activeQ.isError && draftQ.isError && archivedQ.isError;
+  const refetch = () => { activeQ.refetch(); draftQ.refetch(); archivedQ.refetch(); };
   const [bulkUpdate, { isLoading: bulking }] = useBulkUpdateProductsMutation();
   const [archive] = useArchiveProductMutation();
-  const [createProduct] = useCreateProductMutation();
+  const [bulkCreateProducts] = useBulkCreateProductsMutation();
+  const { data: categories = [] } = useGetCategoriesQuery();
+  const { data: brands = [] } = useGetBrandsQuery();
   const toast = useToast();
 
   const [search, setSearch] = useState('');
@@ -134,21 +151,41 @@ export default function ProductsPage() {
   };
 
   const handleImport = async (rows: Record<string, string>[]) => {
-    let count = 0;
-    for (const r of rows) {
-      if (!r.name || !r.basePrice) continue;
-      await createProduct({
-        name: r.name,
-        basePrice: Number(r.basePrice),
-        compareAtPrice: r.compareAtPrice ? Number(r.compareAtPrice) : undefined,
-        shortDescription: r.shortDescription,
-        description: r.description,
-        stock: r.stockOnHand ? [{ sku: null, onHand: Number(r.stockOnHand) || 0 }] : [],
-        status: 'draft',
-      } as any);
-      count++;
+    // Resolve CSV category/brand NAMES to real Mongo ObjectIds (case-insensitive).
+    const catByName = new Map(categories.map((c) => [c.name.toLowerCase().trim(), c._id]));
+    const brandByName = new Map(brands.map((b) => [b.name.toLowerCase().trim(), b._id]));
+    const valid = rows.filter((r) => r.name && r.basePrice);
+    const products = valid.map((r) => ({
+      name: r.name,
+      basePrice: Number(r.basePrice),
+      compareAtPrice: r.compareAtPrice ? Number(r.compareAtPrice) : undefined,
+      categoryId: r.categoryName ? catByName.get(r.categoryName.toLowerCase().trim()) : undefined,
+      brandId: r.brandName ? brandByName.get(r.brandName.toLowerCase().trim()) : undefined,
+      shortDescription: r.shortDescription || undefined,
+      description: r.description || undefined,
+      stock: r.stockOnHand ? Number(r.stockOnHand) || 0 : undefined,
+      // Image column → one or more images (pipe-separated url1|url2|url3); first is primary.
+      images: r.imageUrl
+        ? r.imageUrl.split('|').map((u) => u.trim()).filter(Boolean)
+            .map((url, idx) => ({ url, altText: r.name, isPrimary: idx === 0, sortOrder: idx }))
+        : undefined,
+      status: 'draft' as const,
+    }));
+    // One request per ~100 products — a large import (e.g. 400) stays well under
+    // the backend's global rate limit (vs. one request per row).
+    let created = 0, failed = rows.length - products.length;
+    const CHUNK = 100;
+    for (let i = 0; i < products.length; i += CHUNK) {
+      const batch = products.slice(i, i + CHUNK);
+      try {
+        const res = await bulkCreateProducts({ products: batch }).unwrap();
+        created += res.created; failed += res.failed;
+      } catch {
+        failed += batch.length;
+      }
     }
-    toast.success(`Imported ${count} products as drafts`);
+    if (created) toast.success(`Imported ${created} product${created === 1 ? '' : 's'} as drafts${failed ? ` · ${failed} failed/skipped` : ''}`);
+    else         toast.error(`Import failed — 0 of ${rows.length} products created`);
   };
 
   const columns: ResponsiveColumn<Product>[] = [
@@ -168,8 +205,8 @@ export default function ProductsPage() {
         </Link>
       ),
     },
-    { key: 'category', header: 'Category', render: (p) => <span className="text-stone-600">{catName(p.categoryId)}</span> },
-    { key: 'brand',    header: 'Brand',    render: (p) => <span className="text-stone-600">{brandName(p.brandId)}</span> },
+    { key: 'category', header: 'Category', render: (p) => <span className="text-stone-600">{(p.categoryId as unknown as { name?: string })?.name ?? '—'}</span> },
+    { key: 'brand',    header: 'Brand',    render: (p) => <span className="text-stone-600">{(p.brandId as unknown as { name?: string })?.name ?? '—'}</span> },
     {
       key: 'price', header: 'Price', className: 'text-right',
       render: (p) => (

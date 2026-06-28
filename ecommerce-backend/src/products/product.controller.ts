@@ -7,7 +7,7 @@ import { Auth, CurrentUser } from '../auth/guards/auth.guards';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import {
   CreateProductDto, UpdateProductDto, ProductQueryDto,
-  CreateCategoryDto, CreateBrandDto,
+  CreateCategoryDto, CreateBrandDto, BulkUpdateProductsDto, BulkCreateProductsDto,
 } from './dto/product.dto';
 
 @ApiTags('products')
@@ -41,6 +41,27 @@ export class ProductController {
     @CurrentUser('_id') userId: string,
   ) {
     return this.productService.create(dto, userId);
+  }
+
+  @Post('bulk-update')
+  @Auth('admin', 'seller')
+  @ApiOperation({ summary: 'Update many products at once (status / featured)' })
+  async bulkUpdate(
+    @Body() dto: BulkUpdateProductsDto,
+    @CurrentUser('_id') userId: string,
+    @CurrentUser('role') role: string,
+  ) {
+    return this.productService.bulkUpdate(dto.ids, dto.patch, userId, role);
+  }
+
+  @Post('bulk-create')
+  @Auth('admin', 'seller')
+  @ApiOperation({ summary: 'Create many products in one request (bulk import)' })
+  async bulkCreate(
+    @Body() dto: BulkCreateProductsDto,
+    @CurrentUser('_id') userId: string,
+  ) {
+    return this.productService.bulkCreate(dto.products, userId);
   }
 
   @Patch(':id')
