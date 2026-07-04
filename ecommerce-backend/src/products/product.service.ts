@@ -306,9 +306,15 @@ export class ProductService {
     });
   }
 
-  async getCategoryTree(): Promise<any[]> {
+  async getCategoryTree(maxDepth?: number): Promise<any[]> {
+    const filter: Record<string, any> = { isActive: true };
+    // Optionally cap the tree depth (e.g. mega menu needs only 3 levels) so we
+    // don't ship the entire ~5.5k-node taxonomy to every client.
+    if (typeof maxDepth === 'number' && !Number.isNaN(maxDepth)) {
+      filter.depth = { $lte: maxDepth };
+    }
     const categories = await this.categoryModel
-      .find({ isActive: true })
+      .find(filter)
       .sort({ sortOrder: 1, name: 1 });
 
     // Build tree from flat list

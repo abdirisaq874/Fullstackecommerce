@@ -56,7 +56,9 @@ export const productsApi = apiSlice.injectEndpoints({
       providesTags: [{ type: 'Products', id: 'SEARCH' }],
     }),
     categoryTree: builder.query<Category[], void>({
-      query: () => '/categories',
+      // depth=2 → top + 2 sublevels, enough for the mega menu without shipping
+      // the entire taxonomy.
+      query: () => '/categories?depth=2',
       providesTags: ['Categories'],
     }),
     brands: builder.query<Brand[], void>({

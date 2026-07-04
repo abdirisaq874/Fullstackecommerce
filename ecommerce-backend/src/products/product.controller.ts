@@ -95,8 +95,10 @@ export class CategoryController {
 
   @Get()
   @ApiOperation({ summary: 'Get category tree' })
-  async getTree() {
-    return this.productService.getCategoryTree();
+  async getTree(@Query('depth') depth?: string) {
+    return this.productService.getCategoryTree(
+      depth !== undefined && depth !== '' ? Number(depth) : undefined,
+    );
   }
 
   @Post()

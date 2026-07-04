@@ -15,6 +15,7 @@ import { logout } from '@/store/slices/authSlice';
 import { useCategoryTreeQuery } from '@/store/api/productsApi';
 import { useGetCartQuery } from '@/store/api/cartApi';
 import { useSignOutMutation } from '@/store/api/authApi';
+import { MegaMenu, MobileCategoryNav } from './MegaMenu';
 
 export function Header() {
   const t = useTranslations();
@@ -34,7 +35,6 @@ export function Header() {
   const [query, setQuery] = useState('');
 
   const cartCount = cart?.itemCount ?? 0;
-  const topCats = (categories ?? []).slice(0, 8);
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,13 +141,8 @@ export function Header() {
           </div>
         </div>
 
-        {/* Category nav (desktop) */}
-        <nav className="container hidden h-11 items-center gap-6 text-sm font-semibold lg:flex">
-          <Link href="/search" className="text-accent hover:underline">{t('nav.allProducts')}</Link>
-          {topCats.map((c) => (
-            <Link key={c._id} href={`/c/${c.slug}`} className="text-ink/80 hover:text-brand">{c.name}</Link>
-          ))}
-        </nav>
+        {/* Category mega menu (desktop) */}
+        <MegaMenu categories={categories ?? []} />
       </div>
 
       {/* Mobile drawer */}
@@ -167,9 +162,7 @@ export function Header() {
             </form>
             <div className="flex-1 overflow-y-auto">
               <Link href="/search" onClick={() => setMobileOpen(false)} className="block rounded-lg px-3 py-2 font-bold text-accent">{t('nav.allProducts')}</Link>
-              {(categories ?? []).map((c) => (
-                <Link key={c._id} href={`/c/${c.slug}`} onClick={() => setMobileOpen(false)} className="block rounded-lg px-3 py-2 font-semibold hover:bg-muted">{c.name}</Link>
-              ))}
+              <MobileCategoryNav categories={categories ?? []} onNavigate={() => setMobileOpen(false)} />
             </div>
           </div>
         </div>
