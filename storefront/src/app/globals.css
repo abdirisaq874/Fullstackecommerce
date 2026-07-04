@@ -2,25 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Bold & vibrant theme tokens ───────────────────────────────────────── */
+/* ── Soft Indigo theme tokens ──────────────────────────────────────────── */
 :root {
-  --brand: 262 83% 58%; /* violet 600 */
-  --brand-700: 263 70% 50%;
-  --brand-100: 251 91% 95%;
-  --brand-50: 250 100% 98%;
+  --brand: 243 75% 59%; /* indigo 600 #4f46e5 */
+  --brand-700: 245 58% 51%; /* indigo 700 #4338ca */
+  --brand-100: 226 100% 94%; /* indigo 100 #e0e7ff */
+  --brand-50: 226 100% 97%; /* indigo 50 #eef2ff */
   --brand-fg: 0 0% 100%;
 
-  --accent: 350 89% 60%; /* rose 500 */
+  --accent: 239 84% 67%; /* indigo 500 #6366f1 — soft secondary */
   --accent-fg: 0 0% 100%;
 
-  --sale: 45 96% 53%; /* amber 400 */
-  --sale-fg: 240 10% 4%;
+  --sale: 38 92% 50%; /* amber 500 #f59e0b — deals only */
+  --sale-fg: 248 38% 12%;
 
-  --ink: 222 47% 11%; /* slate 900 */
-  --muted: 210 40% 96%;
-  --muted-fg: 215 16% 47%;
+  --ink: 247 38% 14%; /* deep indigo-ink #191631 */
+  --muted: 250 40% 97%; /* soft indigo tint #f6f5fb */
+  --muted-fg: 248 13% 46%; /* indigo-gray #6a6684 */
   --surface: 0 0% 100%;
-  --line: 214 32% 91%;
+  --line: 250 40% 92%; /* indigo-tinted border #e7e3f3 */
 
   --success: 160 84% 39%;
   --danger: 0 84% 60%;
