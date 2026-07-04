@@ -1,9 +1,7 @@
-name: Seller Portal Deploy
+name: Seller Portal Deploy (Swarm)
 
-# Builds the seller-portal (Next.js) image and rolls out a new Cloud Run
-# revision. NEXT_PUBLIC_* values are inlined at build time and passed as build
-# args; SENTRY_AUTH_TOKEN is optional (source-map upload only).
-
+# Build the seller-portal image (NEXT_PUBLIC_* baked in from repo vars), push to
+# Artifact Registry, then rolling-update the Swarm service over IAP SSH.
 on:
   push:
     branches: [main]
@@ -20,25 +18,21 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      SERVICE: seller-portal
-      REGION: ${{ vars.GCP_REGION }}
-      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/seller-portal
+      IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/seller-portal
+      SWARM_SERVICE: suuq_seller-portal
+      VM: suuq-swarm
+      ZONE: us-central1-a
     steps:
       - uses: actions/checkout@v4
-
       - id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOYER_SA }}
-
       - uses: google-github-actions/setup-gcloud@v2
-
       - name: Configure Docker auth
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
-
-      - name: Build & push image
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - name: Build & push
         run: |
           docker build \
             --build-arg NEXT_PUBLIC_API_URL="${{ vars.BACKEND_URL }}" \
@@ -49,13 +43,7 @@ jobs:
             -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" ./seller-portal-v2
           docker push "$IMAGE:${{ github.sha }}"
           docker push "$IMAGE:latest"
-
-      - name: Deploy to Cloud Run
+      - name: Rolling update on Swarm
         run: |
-          gcloud run deploy "$SERVICE" \
-            --image "$IMAGE:${{ github.sha }}" \
-            --region "$REGION" \
-            --project "$PROJECT_ID" \
-            --port 8080 \
-            --allow-unauthenticated \
-            --quiet
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
+            --command "sudo docker service update --image $IMAGE:${{ github.sha }} $SWARM_SERVICE --with-registry-auth"

@@ -1,0 +1,18 @@
+# Caddy ingress for the Suuq Swarm stack.
+# Auto-provisions Let's Encrypt TLS for each host and reverse-proxies to the
+# Swarm service by name (resolved over the overlay network).
+{
+	email admin@gaarsiiglobal.com
+}
+
+shop.gaarsiiglobal.com {
+	reverse_proxy storefront:8080
+}
+
+seller.gaarsiiglobal.com {
+	reverse_proxy seller-portal:8080
+}
+
+api.gaarsiiglobal.com {
+	reverse_proxy backend:3000
+}

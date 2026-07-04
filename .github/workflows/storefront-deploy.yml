@@ -1,10 +1,7 @@
-name: Storefront Deploy
+name: Storefront Deploy (Swarm)
 
-# Builds the storefront (Next.js) image and rolls out a new Cloud Run revision.
-# NEXT_PUBLIC_* values are inlined at build time, so they are passed as build
-# args from repo variables — the backend must be deployed first so BACKEND_URL
-# is known.
-
+# Build the storefront image (NEXT_PUBLIC_* baked in from repo vars), push to
+# Artifact Registry, then rolling-update the Swarm service over IAP SSH.
 on:
   push:
     branches: [main]
@@ -21,40 +18,30 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      SERVICE: storefront
-      REGION: ${{ vars.GCP_REGION }}
-      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/storefront
+      IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/storefront
+      SWARM_SERVICE: suuq_storefront
+      VM: suuq-swarm
+      ZONE: us-central1-a
     steps:
       - uses: actions/checkout@v4
-
       - id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOYER_SA }}
-
       - uses: google-github-actions/setup-gcloud@v2
-
       - name: Configure Docker auth
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
-
-      - name: Build & push image
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - name: Build & push
         run: |
           docker build \
             --build-arg NEXT_PUBLIC_API_URL="${{ vars.BACKEND_URL }}" \
-            --build-arg NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="${{ vars.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}" \
             --build-arg NEXT_PUBLIC_SITE_NAME="${{ vars.NEXT_PUBLIC_SITE_NAME }}" \
+            --build-arg NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="${{ vars.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}" \
             -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" ./storefront
           docker push "$IMAGE:${{ github.sha }}"
           docker push "$IMAGE:latest"
-
-      - name: Deploy to Cloud Run
+      - name: Rolling update on Swarm
         run: |
-          gcloud run deploy "$SERVICE" \
-            --image "$IMAGE:${{ github.sha }}" \
-            --region "$REGION" \
-            --project "$PROJECT_ID" \
-            --port 8080 \
-            --allow-unauthenticated \
-            --quiet
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
+            --command "sudo docker service update --image $IMAGE:${{ github.sha }} $SWARM_SERVICE --with-registry-auth"
