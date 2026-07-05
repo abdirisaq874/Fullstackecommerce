@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { ProductService } from './product.service';
+import { ProductAiService } from './product-ai.service';
 import { Auth, CurrentUser } from '../auth/guards/auth.guards';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import {
@@ -13,7 +14,17 @@ import {
 @ApiTags('products')
 @Controller('products')
 export class ProductController {
-  constructor(private readonly productService: ProductService) {}
+  constructor(
+    private readonly productService: ProductService,
+    private readonly productAi: ProductAiService,
+  ) {}
+
+  @Post('ai/draft')
+  @Auth('admin', 'seller')
+  @ApiOperation({ summary: 'AI: draft copy + auto-assign category from a product name' })
+  async aiDraft(@Body() dto: { name: string; brief?: string }) {
+    return this.productAi.draft(dto.name, dto.brief);
+  }
 
   @Get()
   @ApiOperation({ summary: 'Search & filter products' })

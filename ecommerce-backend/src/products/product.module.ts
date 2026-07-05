@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ProductController, CategoryController, BrandController } from './product.controller';
 import { ProductService } from './product.service';
+import { ProductAiService } from './product-ai.service';
 import { ProductEventsListener } from './listeners/product-events.listener';
 import {
   Product, ProductSchema, Category, CategorySchema, Brand, BrandSchema,
@@ -16,7 +17,7 @@ import {
     ]),
   ],
   controllers: [ProductController, CategoryController, BrandController],
-  providers: [ProductService, ProductEventsListener],
+  providers: [ProductService, ProductAiService, ProductEventsListener],
   exports: [ProductService],
 })
 export class ProductModule {}
