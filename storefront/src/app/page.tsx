@@ -1,18 +1,21 @@
-import { Hero, ValueProps } from '@/components/home/Hero';
+import { Hero } from '@/components/home/Hero';
 import {
-  FeaturedSection, NewArrivalsSection, BestsellersSection, CategoryGrid, BrandStrip,
+  TrustStrip, DealsOfDay, SpotlightRail, NewArrivals, BestSellers, BrandTiles, WhyUsReviews, Newsletter,
 } from '@/components/home/sections';
 
 export default function HomePage() {
   return (
     <>
       <Hero />
-      <ValueProps />
-      <CategoryGrid />
-      <FeaturedSection />
-      <NewArrivalsSection />
-      <BestsellersSection />
-      <BrandStrip />
+      <TrustStrip />
+      <DealsOfDay />
+      <SpotlightRail title="Popular in Tech" sortBy="popular" href="/c/electronics" />
+      <SpotlightRail title="Popular in Home & Kitchen" sortBy="newest" href="/c/home-and-garden" />
+      <BrandTiles />
+      <NewArrivals />
+      <BestSellers />
+      <WhyUsReviews />
+      <Newsletter />
     </>
   );
 }

@@ -2,25 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Soft Indigo theme tokens ──────────────────────────────────────────── */
+/* ── Aire theme tokens — clean, indigo accent, near-black ink ───────────── */
 :root {
-  --brand: 243 75% 59%; /* indigo 600 #4f46e5 */
-  --brand-700: 245 58% 51%; /* indigo 700 #4338ca */
-  --brand-100: 226 100% 94%; /* indigo 100 #e0e7ff */
-  --brand-50: 226 100% 97%; /* indigo 50 #eef2ff */
+  --brand: 244 75% 57%; /* indigo #4B3FE4 */
+  --brand-700: 245 62% 49%;
+  --brand-100: 245 78% 94%;
+  --brand-50: 246 83% 97%;
   --brand-fg: 0 0% 100%;
 
-  --accent: 239 84% 67%; /* indigo 500 #6366f1 — soft secondary */
+  --accent: 244 75% 57%; /* same indigo — single accent */
   --accent-fg: 0 0% 100%;
 
-  --sale: 38 92% 50%; /* amber 500 #f59e0b — deals only */
-  --sale-fg: 248 38% 12%;
+  --sale: 0 84% 60%; /* red — deal urgency only */
+  --sale-fg: 0 0% 100%;
 
-  --ink: 247 38% 14%; /* deep indigo-ink #191631 */
-  --muted: 250 40% 97%; /* soft indigo tint #f6f5fb */
-  --muted-fg: 248 13% 46%; /* indigo-gray #6a6684 */
-  --surface: 0 0% 100%;
-  --line: 250 40% 92%; /* indigo-tinted border #e7e3f3 */
+  --ink: 240 9% 7%; /* near-black #111114 */
+  --muted: 240 11% 96%; /* soft grey #F5F5F7 */
+  --muted-fg: 240 5% 45%;
+  --surface: 0 0% 100%; /* white */
+  --line: 240 14% 92%;
 
   --success: 160 84% 39%;
   --danger: 0 84% 60%;
@@ -41,7 +41,8 @@
   }
   h1, h2, h3, .font-display {
     font-family: var(--font-display), system-ui, sans-serif;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
+    font-weight: 600;
   }
   ::selection {
     background: hsl(var(--brand));

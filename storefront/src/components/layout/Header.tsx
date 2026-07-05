@@ -55,8 +55,8 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 bg-surface/90 backdrop-blur">
       {/* Announcement bar */}
-      <div className="overflow-hidden bg-brand-gradient text-white">
-        <div className="container flex h-9 items-center justify-center text-xs font-bold tracking-wide">
+      <div className="overflow-hidden bg-ink text-white">
+        <div className="container flex h-9 items-center justify-center text-xs font-medium tracking-wide">
           {t('announce')}
         </div>
       </div>
@@ -72,23 +72,30 @@ export function Header() {
             <Menu className="h-6 w-6" />
           </button>
 
-          <Link href="/" className="font-display text-2xl font-extrabold tracking-tight">
-            <span className="text-gradient">{SITE_NAME}</span>
+          <Link href="/" className="font-display text-2xl font-semibold tracking-tight text-brand">
+            {SITE_NAME}
           </Link>
 
-          {/* Desktop search */}
+          {/* Desktop search — with inline dark Search pill */}
           <form onSubmit={submitSearch} className="relative ml-4 hidden flex-1 lg:block">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-fg" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('nav.searchPlaceholder')}
-              className="focus-ring h-11 w-full rounded-full border-2 border-line bg-muted/50 pl-12 pr-4 placeholder:text-muted-fg focus:border-brand focus:bg-surface"
+              className="focus-ring h-12 w-full rounded-full border border-line bg-muted pl-12 pr-28 placeholder:text-muted-fg focus:border-brand focus:bg-surface"
               aria-label={t('nav.search')}
             />
+            <button
+              type="submit"
+              className="focus-ring absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full bg-ink px-5 py-2 text-sm font-semibold text-white transition hover:bg-ink/90"
+            >
+              Search
+            </button>
           </form>
 
           <div className="ml-auto flex items-center gap-1">
+            <a href="https://seller.gaarsiiglobal.com" className="hidden rounded-full px-3 py-2 text-sm font-semibold text-ink hover:bg-muted sm:block">Sell</a>
             <LocaleSwitcher />
             <Link href="/wishlist" className="focus-ring relative grid h-10 w-10 place-items-center rounded-lg hover:bg-muted" aria-label={t('nav.wishlist')}>
               <Heart className="h-5 w-5" />

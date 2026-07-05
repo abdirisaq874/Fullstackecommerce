@@ -22,9 +22,9 @@ export function SectionHeading({
     <div className="mb-6 flex items-end justify-between gap-4">
       <div>
         {eyebrow && (
-          <span className="text-xs font-bold uppercase tracking-widest text-accent">{eyebrow}</span>
+          <span className="font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-brand">{eyebrow}</span>
         )}
-        <h2 className="font-display text-2xl font-extrabold sm:text-3xl">{title}</h2>
+        <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight sm:text-[1.75rem]">{title}</h2>
       </div>
       {action}
     </div>
@@ -80,7 +80,7 @@ export function Rating({ value = 0, count, size = 14 }: { value?: number; count?
             key={i}
             width={size}
             height={size}
-            className={i < Math.round(value) ? 'fill-sale text-sale' : 'fill-muted text-muted'}
+            className={i < Math.round(value) ? 'fill-amber-400 text-amber-400' : 'fill-line text-line'}
           />
         ))}
       </div>
@@ -101,11 +101,11 @@ export function Price({
   const pct = discountPercent(amount, compareAt);
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      <span className="font-display text-lg font-extrabold text-ink">{formatPrice(amount, currency)}</span>
+      <span className="font-display text-lg font-bold text-brand">{formatPrice(amount, currency)}</span>
       {pct && (
         <>
           <span className="text-sm text-muted-fg line-through">{formatPrice(compareAt, currency)}</span>
-          <Badge variant="sale">-{pct}%</Badge>
+          <span className="text-xs font-bold text-sale">−{pct}%</span>
         </>
       )}
     </div>

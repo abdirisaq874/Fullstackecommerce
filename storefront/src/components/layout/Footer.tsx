@@ -46,7 +46,7 @@ export function Footer() {
       <div className="container py-12">
         <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-6">
           <div className="lg:col-span-2">
-            <span className="font-display text-2xl font-extrabold text-gradient">{SITE_NAME}</span>
+            <span className="font-display text-2xl font-semibold tracking-tight text-brand">{SITE_NAME}</span>
             <p className="mt-3 max-w-xs text-sm text-muted-fg">
               A bold, modern marketplace. Multilingual search, fast checkout, fair prices.
             </p>
