@@ -31,6 +31,9 @@ export class EmbeddingsService {
     if (this.provider === 'openai') {
       return !!this.config.get<string>('search.embeddings.openai.apiKey');
     }
+    if (this.provider === 'openrouter') {
+      return !!this.config.get<string>('search.embeddings.openrouter.apiKey');
+    }
     return false;
   }
 
@@ -49,6 +52,7 @@ export class EmbeddingsService {
     try {
       if (this.provider === 'cohere') return await this.cohere(clean, inputType);
       if (this.provider === 'openai') return await this.openai(clean);
+      if (this.provider === 'openrouter') return await this.openrouter(clean);
       return [];
     } catch (err) {
       this.logger.error(`Embedding failed (${this.provider}): ${(err as Error).message}`);
@@ -78,4 +82,30 @@ export class EmbeddingsService {
     );
     return (res?.data ?? []).map((d: any) => d.embedding as number[]);
   }
+
+  /**
+   * OpenRouter (OpenAI-compatible). Qwen3-Embedding-8B returns 4096-dim vectors;
+   * we slice to `dims` (Matryoshka) and L2-normalize so cosine == dot product,
+   * matching the index mapping (cosinesimil) and the category vectors.
+   */
+  private async openrouter(texts: string[]): Promise<number[][]> {
+    const apiKey = this.config.get<string>('search.embeddings.openrouter.apiKey');
+    const baseUrl =
+      this.config.get<string>('search.embeddings.openrouter.baseUrl') || 'https://openrouter.ai/api/v1';
+    const model = this.config.get<string>('search.embeddings.openrouter.model');
+    const res = await postJson<any>(
+      `${baseUrl}/embeddings`,
+      { model, input: texts },
+      { Authorization: `Bearer ${apiKey}` },
+    );
+    const dims = this.dims;
+    return (res?.data ?? []).map((d: any) => normalize((d.embedding as number[]).slice(0, dims)));
+  }
+}
+
+function normalize(v: number[]): number[] {
+  let n = 0;
+  for (const x of v) n += x * x;
+  n = Math.sqrt(n) || 1;
+  return v.map((x) => x / n);
 }

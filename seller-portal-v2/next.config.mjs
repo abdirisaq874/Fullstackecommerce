@@ -56,6 +56,7 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'images.unsplash.com' },
       { protocol: 'https', hostname: '**.cloudinary.com' },
+      { protocol: 'https', hostname: '**.r2.dev' }, // Cloudflare R2 product images
     ],
   },
   async headers() {

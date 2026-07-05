@@ -40,6 +40,13 @@ export default registerAs('search', () => ({
       apiKey: process.env.OPENAI_API_KEY || '',
       model: process.env.OPENAI_EMBED_MODEL || 'text-embedding-3-small',
     },
+    // OpenRouter (OpenAI-compatible). Qwen3-Embedding-8B → sliced to `dims` +
+    // L2-normalized, matching the category-classification vectors.
+    openrouter: {
+      apiKey: process.env.OPENROUTER_API_KEY || '',
+      baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+      model: process.env.OPENROUTER_EMBED_MODEL || 'qwen/qwen3-embedding-8b',
+    },
   },
 
   rerank: {
