@@ -65,6 +65,11 @@ export class Category {
   // ── Which product attributes are exposed as filters for this category ──
   @Prop({ type: [Object], default: [] })
   facets: CategoryFacet[];
+
+  // ── Semantic embedding of the category name-path (for product auto-classification).
+  //    select:false so the big vector is never returned by normal category queries. ──
+  @Prop({ type: [Number], default: undefined, select: false })
+  embedding?: number[];
 }
 export const CategorySchema = SchemaFactory.createForClass(Category);
 
