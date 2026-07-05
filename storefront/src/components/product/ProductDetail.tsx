@@ -10,6 +10,7 @@ import {
   Heart, ShoppingBag, Truck, ShieldCheck, RefreshCcw, ChevronRight, MessageCircle, Check,
 } from 'lucide-react';
 import { cn, localizedText } from '@/lib/utils';
+import { ZoomImage } from './ZoomImage';
 import { Button, Price, Rating, Badge, QtyStepper, Container } from '@/components/ui';
 import { useProductBySlugQuery } from '@/store/api/productsApi';
 import { useAddToCartMutation } from '@/store/api/cartApi';
@@ -153,10 +154,10 @@ export function ProductDetail({ slug }: { slug: string }) {
       <div className="grid gap-10 lg:grid-cols-2">
         {/* Gallery */}
         <div>
-          <div className="relative aspect-square overflow-hidden rounded-3xl border border-line bg-muted">
-            <Image src={mainImg} alt={product.name} fill priority className="object-cover" sizes="(max-width:1024px) 100vw, 50vw" />
+          <div className="relative">
+            <ZoomImage src={mainImg} alt={product.name} />
             {product.compareAtPrice && product.compareAtPrice > price && (
-              <Badge variant="sale" className="absolute left-4 top-4 text-sm">SALE</Badge>
+              <Badge variant="sale" className="absolute left-4 top-4 z-10 text-sm">SALE</Badge>
             )}
           </div>
           {images.length > 1 && (
