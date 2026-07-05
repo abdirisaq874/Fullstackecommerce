@@ -90,11 +90,15 @@ export class RetrievalService {
   ): Promise<Hit[]> {
     if (!vector || vector.length === 0) return [];
     const filter = buildOpenSearchFilters(filters, category);
+    // Only keep genuinely-close neighbours — below this, k-NN just returns the
+    // nearest-of-everything and floods the result set.
+    const minScore = this.config.get<number>('search.vectorMinScore') ?? 0.85;
     try {
       const res = await this.client.search({
         index: this.index,
         body: {
           size,
+          min_score: minScore,
           query: { knn: { embedding: { vector, k: size, filter: { bool: { filter } } } } },
           _source: { excludes: ['embedding'] },
         },

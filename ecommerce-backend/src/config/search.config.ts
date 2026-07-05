@@ -29,6 +29,11 @@ export default registerAs('search', () => ({
     translation: bool(process.env.SEARCH_ENABLE_TRANSLATION, true),
   },
 
+  // Minimum k-NN score (Lucene cosinesimil, ~[0,1]) a vector hit must clear to
+  // count as a real semantic match — cuts the ~0.80 "everything is a bit
+  // similar" noise so vector doesn't flood results with the whole catalog.
+  vectorMinScore: parseFloat(process.env.SEARCH_VECTOR_MIN_SCORE || '0.85'),
+
   embeddings: {
     provider: (process.env.EMBEDDINGS_PROVIDER || 'cohere').toLowerCase(),
     dims: parseInt(process.env.EMBEDDINGS_DIMS || '1024', 10),

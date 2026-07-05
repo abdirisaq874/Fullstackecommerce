@@ -4,6 +4,11 @@ import { postJson } from './http.util';
 
 type InputType = 'search_document' | 'search_query';
 
+// A live search query can't wait on a cold embedding model. Cap query embeds
+// hard (→ graceful lexical fallback on timeout); allow indexing embeds to run long.
+const QUERY_EMBED_TIMEOUT_MS = parseInt(process.env.SEARCH_QUERY_EMBED_TIMEOUT_MS || '2500', 10);
+const DOC_EMBED_TIMEOUT_MS = parseInt(process.env.SEARCH_DOC_EMBED_TIMEOUT_MS || '30000', 10);
+
 /**
  * Multilingual embeddings. Default provider: Cohere `embed-multilingual-v3`
  * (covers Somali). Swappable to OpenAI (plumbing only — weak on Somali) or
@@ -49,10 +54,11 @@ export class EmbeddingsService {
   private async embed(texts: string[], inputType: InputType): Promise<number[][]> {
     const clean = texts.map((t) => (t || '').trim()).filter(Boolean);
     if (!this.enabled || clean.length === 0) return [];
+    const timeoutMs = inputType === 'search_query' ? QUERY_EMBED_TIMEOUT_MS : DOC_EMBED_TIMEOUT_MS;
     try {
-      if (this.provider === 'cohere') return await this.cohere(clean, inputType);
-      if (this.provider === 'openai') return await this.openai(clean);
-      if (this.provider === 'openrouter') return await this.openrouter(clean);
+      if (this.provider === 'cohere') return await this.cohere(clean, inputType, timeoutMs);
+      if (this.provider === 'openai') return await this.openai(clean, timeoutMs);
+      if (this.provider === 'openrouter') return await this.openrouter(clean, timeoutMs);
       return [];
     } catch (err) {
       this.logger.error(`Embedding failed (${this.provider}): ${(err as Error).message}`);
@@ -60,25 +66,27 @@ export class EmbeddingsService {
     }
   }
 
-  private async cohere(texts: string[], inputType: InputType): Promise<number[][]> {
+  private async cohere(texts: string[], inputType: InputType, timeoutMs?: number): Promise<number[][]> {
     const apiKey = this.config.get<string>('search.embeddings.cohere.apiKey');
     const model = this.config.get<string>('search.embeddings.cohere.model');
     const res = await postJson<any>(
       'https://api.cohere.com/v2/embed',
       { model, texts, input_type: inputType, embedding_types: ['float'] },
       { Authorization: `Bearer ${apiKey}` },
+      timeoutMs,
     );
     // v2 → { embeddings: { float: number[][] } }; v1 → { embeddings: number[][] }
     return res?.embeddings?.float ?? res?.embeddings ?? [];
   }
 
-  private async openai(texts: string[]): Promise<number[][]> {
+  private async openai(texts: string[], timeoutMs?: number): Promise<number[][]> {
     const apiKey = this.config.get<string>('search.embeddings.openai.apiKey');
     const model = this.config.get<string>('search.embeddings.openai.model');
     const res = await postJson<any>(
       'https://api.openai.com/v1/embeddings',
       { model, input: texts },
       { Authorization: `Bearer ${apiKey}` },
+      timeoutMs,
     );
     return (res?.data ?? []).map((d: any) => d.embedding as number[]);
   }
@@ -88,7 +96,7 @@ export class EmbeddingsService {
    * we slice to `dims` (Matryoshka) and L2-normalize so cosine == dot product,
    * matching the index mapping (cosinesimil) and the category vectors.
    */
-  private async openrouter(texts: string[]): Promise<number[][]> {
+  private async openrouter(texts: string[], timeoutMs?: number): Promise<number[][]> {
     const apiKey = this.config.get<string>('search.embeddings.openrouter.apiKey');
     const baseUrl =
       this.config.get<string>('search.embeddings.openrouter.baseUrl') || 'https://openrouter.ai/api/v1';
@@ -97,6 +105,7 @@ export class EmbeddingsService {
       `${baseUrl}/embeddings`,
       { model, input: texts },
       { Authorization: `Bearer ${apiKey}` },
+      timeoutMs,
     );
     const dims = this.dims;
     return (res?.data ?? []).map((d: any) => normalize((d.embedding as number[]).slice(0, dims)));
