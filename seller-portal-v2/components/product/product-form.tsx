@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller, useWatch, type SubmitHandler, type FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Check, AlertCircle, Save, Eye, ArrowLeft, FileText, ImageIcon, Tag as TagIcon, Hash, Layers, Globe, Loader2, Upload, GripVertical } from 'lucide-react';
+import { Check, AlertCircle, Save, Eye, ArrowLeft, FileText, ImageIcon, Tag as TagIcon, Hash, Layers, Globe, Loader2, Upload, GripVertical, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { Button } from '@/components/primitives/button';
@@ -16,6 +16,7 @@ import { VariantsEditor } from '@/components/product/variants-editor';
 import { ConfirmDialog } from '@/components/primitives/confirm-dialog';
 import { CURRENCIES, LOCALES } from '@/lib/config/reference-data';
 import { useGetCategoriesQuery, useGetBrandsQuery } from '@/lib/api/catalog-api';
+import { useAiDraftProductMutation } from '@/lib/api/products-api';
 import { inferDimensions, buildProductDto } from '@/lib/utils';
 import {
   productFormSchema,
@@ -65,6 +66,8 @@ const blankDefaults: ProductFormValues = {
   brandId: '',
   shortDescription: '',
   description: '',
+  tags: [],
+  keywords: [],
   status: 'draft',
   isFeatured: false,
   basePrice: '',
@@ -95,6 +98,8 @@ function defaultsFromExisting(existing: Product): ProductFormValues {
     brandId: refId(existing.brandId),
     shortDescription: existing.shortDescription ?? '',
     description: existing.description ?? '',
+    tags: (existing as { tags?: string[] }).tags ?? [],
+    keywords: (existing as { keywords?: string[] }).keywords ?? [],
     status: existing.status,
     isFeatured: !!existing.isFeatured,
     basePrice: String(existing.basePrice ?? ''),
@@ -538,6 +543,57 @@ function BasicsSection({
   // Real categories/brands from the backend (replaces hard-coded reference-data).
   const { data: categories = [] } = useGetCategoriesQuery();
   const { data: brands = [] } = useGetBrandsQuery();
+
+  // ── AI assist: generate copy/tags/keywords + auto-assign the category ──
+  const [aiDraft, { isLoading: aiLoading }] = useAiDraftProductMutation();
+  const [brief, setBrief] = useState('');
+  const [assignedPath, setAssignedPath] = useState('');
+  const currentCategoryId = watch('categoryId');
+  const aiTags = (watch('tags') ?? []) as string[];
+  const aiKeywords = (watch('keywords') ?? []) as string[];
+  // Prefer the AI-returned full path; fall back to the stored category's name (edit mode).
+  const categoryDisplay =
+    assignedPath || categories.find((c) => c._id === currentCategoryId)?.name || '';
+
+  const runAi = async () => {
+    const name = (getValues('name') || '').trim();
+    if (!name) {
+      toast.error('Enter a product name first — the AI builds everything from it.');
+      return;
+    }
+    const attrs = (getValues('attributes') || []).filter((a) => a.key && a.value);
+    const images = getValues('images') || [];
+    const primary = images.find((i) => i.isPrimary) || images[0];
+    const brandName = brands.find((b) => b._id === getValues('brandId'))?.name;
+    try {
+      const res = await aiDraft({
+        name,
+        brief: brief.trim() || undefined,
+        brand: brandName,
+        attributes: attrs.length ? attrs : undefined,
+        imageUrl: primary?.url,
+      }).unwrap();
+
+      setValue('shortDescription', res.shortDescription, { shouldDirty: true, shouldValidate: true });
+      setValue('description', res.description, { shouldDirty: true });
+      setValue('tags', res.tags || [], { shouldDirty: true });
+      setValue('keywords', res.keywords || [], { shouldDirty: true });
+      // Mirror the generated copy into the canonical English localization.
+      const cur = getValues('localizations') ?? { en: {} };
+      setValue(
+        'localizations',
+        { ...cur, en: { ...(cur.en ?? {}), name, shortDescription: res.shortDescription, description: res.description } },
+        { shouldDirty: true },
+      );
+      // Category is system-owned — set it from the AI, sellers can't change it.
+      if (res.categoryId) setValue('categoryId', res.categoryId, { shouldDirty: true });
+      setAssignedPath(res.categoryPath || '');
+      toast.success('AI draft ready — review and tweak before publishing.');
+    } catch (e) {
+      const msg = (e as { data?: { message?: string } })?.data?.message;
+      toast.error(msg || 'AI generation failed. Please try again.');
+    }
+  };
   // Watch the localizations object so the locale-status pills stay live.
   const localizations = (watch('localizations') ?? { en: {} }) as LocalizedFields;
   const enValues = {
@@ -659,12 +715,45 @@ function BasicsSection({
         </Field>
 
         {activeLocale === 'en' && (
+          <div className="sm:col-span-2 rounded-lg border border-brand-200 bg-brand-50/60 p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="w-4 h-4 text-brand-600" />
+              <span className="text-sm font-medium text-stone-900">AI product assistant</span>
+            </div>
+            <p className="text-xs text-stone-600 mb-3">
+              From the name (plus any note, brand, attributes or photo you add), the assistant writes
+              the description, tags and keywords, and assigns the best category automatically.
+            </p>
+            <Textarea
+              rows={2}
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
+              placeholder="Optional note — colour, material, size, key features, who it's for…"
+              className="mb-3"
+            />
+            <Button type="button" onClick={runAi} disabled={aiLoading || !fieldValues.name.trim()}>
+              {aiLoading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
+              ) : (
+                <><Sparkles className="w-4 h-4" /> Generate with AI</>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {activeLocale === 'en' && (
           <>
-            <Field label="Category" hint="Used for buyer filtering">
-              <Select {...register('categoryId')}>
-                <option value="">— None —</option>
-                {categories.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
-              </Select>
+            <Field label="Category" hint="Assigned automatically by AI — buyers browse by this">
+              <div className="flex items-center min-h-[2.5rem] px-3 py-2 rounded-md border border-stone-200 bg-stone-50 text-sm">
+                {categoryDisplay ? (
+                  <span className="inline-flex items-center gap-1.5 text-stone-800">
+                    <Sparkles className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                    <span className="truncate">{categoryDisplay}</span>
+                  </span>
+                ) : (
+                  <span className="text-stone-400">Assigned when you generate with AI</span>
+                )}
+              </div>
             </Field>
             <Field label="Brand">
               <Select {...register('brandId')}>
@@ -698,6 +787,35 @@ function BasicsSection({
             placeholder="Materials, craftsmanship, story behind the product…"
           />
         </Field>
+
+        {activeLocale === 'en' && (aiTags.length > 0 || aiKeywords.length > 0) && (
+          <div className="sm:col-span-2 space-y-2">
+            {aiTags.length > 0 && (
+              <div>
+                <div className="text-xs text-stone-500 mb-1.5">Tags (AI-generated)</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {aiTags.map((t) => (
+                    <span key={t} className="inline-flex items-center px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200 text-xs">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {aiKeywords.length > 0 && (
+              <div>
+                <div className="text-xs text-stone-500 mb-1.5">Search keywords (AI-generated)</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {aiKeywords.map((k) => (
+                    <span key={k} className="inline-flex items-center px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200 text-xs">
+                      {k}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {activeLocale === 'en' && (

@@ -68,6 +68,10 @@ services:
       COHERE_API_KEY: ${COHERE_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+      # Seller AI: Gemma-4-26b handles copy + vision; Qwen3 embeds for category match.
+      OPENROUTER_GEN_MODEL: google/gemma-4-26b-a4b-it
+      OPENROUTER_VISION_MODEL: google/gemma-4-26b-a4b-it
+      OPENROUTER_EMBED_MODEL: qwen/qwen3-embedding-8b
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
       STRIPE_CURRENCY: usd

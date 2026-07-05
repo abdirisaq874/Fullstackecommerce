@@ -8,6 +8,24 @@ import type { Product, CreateProductDto } from '@/lib/types';
  * frontend convenience aliases below (`search`, `categoryId`, `sellerId`) are
  * mapped to those server-side names inside the `query` builder.
  */
+/** Payload for POST /products/ai/draft (seller AI assist). */
+export interface AiDraftInput {
+  name: string;
+  brief?: string;
+  brand?: string;
+  attributes?: { key: string; value: string }[];
+  imageUrl?: string;
+}
+/** What the AI returns: copy + a system-assigned category. */
+export interface AiDraftResult {
+  shortDescription: string;
+  description: string;
+  tags: string[];
+  keywords: string[];
+  categoryId: string | null;
+  categoryPath: string;
+}
+
 export interface ListProductsParams {
   page?: number;
   limit?: number;
@@ -68,6 +86,17 @@ export const productsApi = baseApi.injectEndpoints({
       }),
       transformResponse: (res: ResponseEnvelope<Product> | Product) => unwrapEnvelope<Product>(res),
       providesTags: (_, __, id) => [{ type: 'Product', id }],
+    }),
+
+    /** AI: generate copy + tags/keywords and auto-assign a category (system-owned). */
+    aiDraftProduct: builder.mutation<AiDraftResult, AiDraftInput>({
+      query: (body) => ({
+        url: '/products/ai/draft',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (res: ResponseEnvelope<AiDraftResult> | AiDraftResult) =>
+        unwrapEnvelope<AiDraftResult>(res),
     }),
 
     createProduct: builder.mutation<Product, CreateProductDto & { dimensions?: any[]; hasVariants?: boolean; stockOnHand?: any }>({
@@ -138,6 +167,7 @@ export const productsApi = baseApi.injectEndpoints({
 export const {
   useListProductsQuery,
   useGetProductQuery,
+  useAiDraftProductMutation,
   useCreateProductMutation,
   useUpdateProductMutation,
   useArchiveProductMutation,

@@ -4,6 +4,13 @@ import { Model } from 'mongoose';
 import { Category } from './schemas/product.schema';
 import { postJson } from '../search-engine/providers/http.util';
 
+export interface AiDraftInput {
+  name: string;
+  brief?: string;
+  brand?: string;
+  attributes?: { key: string; value: string }[];
+  imageUrl?: string;
+}
 export interface ProductDraft {
   shortDescription: string;
   description: string;
@@ -13,21 +20,16 @@ export interface ProductDraft {
   categoryPath: string;
 }
 
-const EMBED_DIM = 1024; // truncate Qwen3-Embedding-8B (4096) via Matryoshka for lean storage
+const EMBED_DIM = 1024;
 const CATEGORY_TOP_K = 12;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
-interface CatVec {
-  id: string;
-  name: string;
-  path: string;
-  vec: Float32Array;
-}
+interface CatVec { id: string; name: string; path: string; vec: Float32Array; }
 
 /**
- * Seller-facing AI (OpenRouter): generate product copy and auto-classify into the
- * Google taxonomy using semantic embeddings (Qwen3-Embedding-8B) + an LLM pick.
- * Category assignment is system-owned; sellers never choose categories.
+ * Seller-facing AI (OpenRouter): generate product copy (optionally from the
+ * product image via a vision model) and auto-classify into the Google taxonomy
+ * using embeddings + an LLM re-rank. Category assignment is system-owned.
  */
 @Injectable()
 export class ProductAiService {
@@ -41,7 +43,9 @@ export class ProductAiService {
     return {
       apiKey: process.env.OPENROUTER_API_KEY || '',
       baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-      chatModel: process.env.OPENROUTER_GEN_MODEL || 'qwen/qwen-2.5-7b-instruct',
+      // Gemma-4-26b handles both text copy and vision (image → attributes).
+      chatModel: process.env.OPENROUTER_GEN_MODEL || 'google/gemma-4-26b-a4b-it',
+      visionModel: process.env.OPENROUTER_VISION_MODEL || 'google/gemma-4-26b-a4b-it',
       embedModel: process.env.OPENROUTER_EMBED_MODEL || 'qwen/qwen3-embedding-8b',
     };
   }
@@ -51,24 +55,26 @@ export class ProductAiService {
     return !!k && !k.startsWith('PLACEHOLDER');
   }
 
-  private headers() {
-    return { Authorization: `Bearer ${this.cfg.apiKey}` };
-  }
+  private headers() { return { Authorization: `Bearer ${this.cfg.apiKey}` }; }
 
-  /** One OpenRouter chat call → parsed JSON object (tolerant of prose around it). */
-  private async chat(system: string, user: string): Promise<any> {
+  /** Chat call → parsed JSON. Uses the vision model when an image URL is supplied. */
+  private async chat(system: string, user: string, imageUrl?: string): Promise<any> {
+    const useVision = !!imageUrl;
+    const userContent: any = useVision
+      ? [{ type: 'text', text: user }, { type: 'image_url', image_url: { url: imageUrl } }]
+      : user;
     const res = await postJson<any>(
       `${this.cfg.baseUrl}/chat/completions`,
       {
-        model: this.cfg.chatModel,
+        model: useVision ? this.cfg.visionModel : this.cfg.chatModel,
         temperature: 0.4,
         messages: [
           { role: 'system', content: system },
-          { role: 'user', content: user },
+          { role: 'user', content: userContent },
         ],
       },
       this.headers(),
-      30000,
+      40000,
     );
     const content: string = res?.choices?.[0]?.message?.content ?? '';
     try {
@@ -80,7 +86,6 @@ export class ProductAiService {
     }
   }
 
-  /** Embed text with Qwen3-Embedding-8B, truncated to EMBED_DIM and L2-normalized. */
   async embed(text: string): Promise<Float32Array> {
     const res = await postJson<any>(
       `${this.cfg.baseUrl}/embeddings`,
@@ -93,15 +98,34 @@ export class ProductAiService {
     return normalize(raw.slice(0, EMBED_DIM));
   }
 
-  /** Generate marketing copy from the product name (+ optional seller note). */
-  async enrich(name: string, brief?: string) {
+  /** Build the context string fed to the copy generator. */
+  private context(input: AiDraftInput): string {
+    const parts = [`Product name: ${input.name}`];
+    if (input.brand) parts.push(`Brand: ${input.brand}`);
+    if (input.attributes?.length) {
+      parts.push(`Attributes: ${input.attributes.map((a) => `${a.key}=${a.value}`).join(', ')}`);
+    }
+    if (input.brief) parts.push(`Seller note: ${input.brief}`);
+    if (input.imageUrl) parts.push('An image of the product is attached — use it to infer color, material and form.');
+    return parts.join('\n');
+  }
+
+  async enrich(input: AiDraftInput) {
     const system =
-      'You are an expert e-commerce copywriter. Given a product, return ONLY JSON ' +
-      'with this shape: {"shortDescription": string (max 160 chars, punchy), ' +
-      '"description": string (2-4 short plain-text paragraphs, no markdown), ' +
-      '"tags": string[] (5-10 short lowercase tags), ' +
-      '"keywords": string[] (6-12 SEO search keywords)}. Write in English.';
-    const out = await this.chat(system, `Product name: ${name}${brief ? `\nSeller note: ${brief}` : ''}`);
+      'You are an expert e-commerce copywriter. Using the product details (and the ' +
+      'attached image if present), return ONLY JSON: {"shortDescription": string (max ' +
+      '160 chars, punchy), "description": string (2-4 short plain-text paragraphs, no ' +
+      'markdown), "tags": string[] (5-10 short lowercase tags), "keywords": string[] ' +
+      '(6-12 SEO keywords)}. Write in English.';
+    let out: any;
+    try {
+      out = await this.chat(system, this.context(input), input.imageUrl);
+    } catch (e) {
+      if (!input.imageUrl) throw e;
+      // Image not reachable / vision provider hiccup → still generate from text.
+      this.logger.warn(`vision enrich failed, retrying text-only: ${(e as Error).message}`);
+      out = await this.chat(system, this.context({ ...input, imageUrl: undefined }));
+    }
     return {
       shortDescription: String(out.shortDescription || '').slice(0, 200),
       description: String(out.description || ''),
@@ -110,7 +134,6 @@ export class ProductAiService {
     };
   }
 
-  /** Load + cache category name-paths and their embedding vectors. */
   private async ensureCache(): Promise<CatVec[]> {
     if (this.catCache && Date.now() - this.cacheAt < CACHE_TTL_MS) return this.catCache;
     const all = await this.categoryModel.find({ isActive: true }).select('name').lean();
@@ -124,44 +147,34 @@ export class ProductAiService {
       .map((c: any) => ({
         id: String(c._id),
         name: c.name,
-        path: [...(c.ancestors || []).map((a: any) => nameById.get(String(a)) || ''), c.name]
-          .filter(Boolean)
-          .join(' › '),
+        path: [...(c.ancestors || []).map((a: any) => nameById.get(String(a)) || ''), c.name].filter(Boolean).join(' › '),
         vec: Float32Array.from(c.embedding),
       }));
     this.cacheAt = Date.now();
-    this.logger.log(`Loaded ${this.catCache.length} category embeddings into cache`);
+    this.logger.log(`Loaded ${this.catCache.length} category embeddings`);
     return this.catCache;
   }
 
-  /** Embeddings + LLM hybrid: nearest categories by cosine, then LLM picks the best. */
   private async classifyByEmbeddings(text: string): Promise<{ categoryId: string; categoryPath: string } | null> {
     const cats = await this.ensureCache();
-    if (!cats.length) return null; // backfill not run yet → caller falls back to tree walk
+    if (!cats.length) return null;
     const q = await this.embed(text);
-    const ranked = cats
-      .map((c) => ({ c, s: dot(q, c.vec) }))
-      .sort((a, b) => b.s - a.s)
-      .slice(0, CATEGORY_TOP_K);
-
-    const list = ranked.map((r, i) => `${i + 1}. ${r.c.path}`).join('\n');
-    let chosen = ranked[0].c; // default to nearest neighbor
+    const ranked = cats.map((c) => ({ c, s: dot(q, c.vec) })).sort((a, b) => b.s - a.s).slice(0, CATEGORY_TOP_K);
+    let chosen = ranked[0].c;
     try {
       const out = await this.chat(
         'You assign products to a category taxonomy. The numbered list below is already the ' +
-          'most semantically similar categories. Pick the SINGLE best fit for the product. ' +
-          'Return ONLY JSON {"choice": number}.',
-        `Product: ${text}\n\nCandidate categories:\n${list}`,
+          'most semantically similar categories. Pick the SINGLE best fit. Return ONLY JSON {"choice": number}.',
+        `Product: ${text}\n\nCandidate categories:\n${ranked.map((r, i) => `${i + 1}. ${r.c.path}`).join('\n')}`,
       );
       const idx = Number(out?.choice);
       if (idx >= 1 && idx <= ranked.length) chosen = ranked[idx - 1].c;
     } catch (e) {
-      this.logger.warn(`LLM re-rank failed, using nearest neighbor: ${(e as Error).message}`);
+      this.logger.warn(`re-rank failed, using nearest: ${(e as Error).message}`);
     }
     return { categoryId: chosen.id, categoryPath: chosen.path };
   }
 
-  /** Fallback: greedy top-down tree walk (no embeddings needed). */
   private async classifyByTree(text: string): Promise<{ categoryId: string | null; categoryPath: string }> {
     let parentId: any = null;
     const path: string[] = [];
@@ -170,13 +183,10 @@ export class ProductAiService {
       const filter = depth === 0 ? { depth: 0, isActive: true } : { parentId, isActive: true };
       const children = await this.categoryModel.find(filter).select('name').lean();
       if (!children.length) break;
-      if (children.length === 1) {
-        path.push(children[0].name); leafId = String(children[0]._id); parentId = children[0]._id; continue;
-      }
+      if (children.length === 1) { path.push(children[0].name); leafId = String(children[0]._id); parentId = children[0]._id; continue; }
       const listed = children as any[];
       const out = await this.chat(
-        'Pick the SINGLE best-fitting category for the product from the numbered list. ' +
-          'Return ONLY JSON {"choice": number} — the number, or 0 if none fits.',
+        'Pick the SINGLE best-fitting category from the list. Return ONLY JSON {"choice": number} — the number, or 0 if none fits.',
         `Product: ${text}\n\nCategories:\n${listed.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}`,
       );
       const idx = Number(out?.choice);
@@ -191,23 +201,22 @@ export class ProductAiService {
       const viaEmb = await this.classifyByEmbeddings(text);
       if (viaEmb) return viaEmb;
     } catch (e) {
-      this.logger.warn(`Embedding classify failed, falling back to tree: ${(e as Error).message}`);
+      this.logger.warn(`embedding classify failed, tree fallback: ${(e as Error).message}`);
     }
     return this.classifyByTree(text);
   }
 
-  /** Full draft: copy + auto-assigned category. */
-  async draft(name: string, brief?: string): Promise<ProductDraft> {
+  async draft(input: AiDraftInput): Promise<ProductDraft> {
     if (!this.enabled) throw new BadRequestException('AI is not configured (set a real OPENROUTER_API_KEY).');
-    if (!name?.trim()) throw new BadRequestException('Product name is required.');
-    const enriched = await this.enrich(name, brief);
-    const cls = await this.classify(`${name}. ${enriched.shortDescription}`);
-    this.logger.log(`AI draft "${name}" → ${cls.categoryPath || '(no category)'}`);
+    if (!input?.name?.trim()) throw new BadRequestException('Product name is required.');
+    const enriched = await this.enrich(input);
+    const attrText = input.attributes?.length ? ' ' + input.attributes.map((a) => a.value).join(' ') : '';
+    const cls = await this.classify(`${input.name}. ${enriched.shortDescription}${attrText}`);
+    this.logger.log(`AI draft "${input.name}"${input.imageUrl ? ' (+image)' : ''} → ${cls.categoryPath || '(none)'}`);
     return { ...enriched, ...cls };
   }
 }
 
-/* ── vector helpers ── */
 function normalize(v: number[]): Float32Array {
   let n = 0;
   for (const x of v) n += x * x;

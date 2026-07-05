@@ -70,6 +70,12 @@ export class CreateProductDto {
   @ApiPropertyOptional() @IsOptional() @IsString() brandId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) shortDescription?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional() @IsArray() @IsString({ each: true }) tags?: string[];
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional() @IsArray() @IsString({ each: true }) keywords?: string[];
+
   @ApiProperty() @IsNumber() @Min(0) basePrice: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) compareAtPrice?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() currency?: string;

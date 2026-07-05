@@ -201,6 +201,8 @@ export function buildProductDto(form: any): any {
   if (form.brandId)          dto.brandId          = form.brandId;
   if (form.shortDescription) dto.shortDescription = form.shortDescription;
   if (form.description)      dto.description      = form.description;
+  if (form.tags?.length)     dto.tags             = form.tags;
+  if (form.keywords?.length) dto.keywords         = form.keywords;
   if (form.compareAtPrice)   dto.compareAtPrice   = Number(form.compareAtPrice);
   if (form.currency)         dto.currency         = form.currency;
   if (form.status)           dto.status           = form.status;

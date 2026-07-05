@@ -123,6 +123,10 @@ export class Product {
   @Prop() description?: string;
   @Prop() shortDescription?: string;
 
+  // ─── AI-generated discovery signals (system-managed, boost search) ───
+  @Prop({ type: [String], default: [] }) tags: string[];
+  @Prop({ type: [String], default: [] }) keywords: string[];
+
   @Prop({ required: true, type: Number }) basePrice: number;
   @Prop({ type: Number }) compareAtPrice?: number;
   @Prop({ default: 'USD' }) currency: string;

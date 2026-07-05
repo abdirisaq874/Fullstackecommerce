@@ -21,9 +21,18 @@ export class ProductController {
 
   @Post('ai/draft')
   @Auth('admin', 'seller')
-  @ApiOperation({ summary: 'AI: draft copy + auto-assign category from a product name' })
-  async aiDraft(@Body() dto: { name: string; brief?: string }) {
-    return this.productAi.draft(dto.name, dto.brief);
+  @ApiOperation({ summary: 'AI: draft copy + auto-assign category from product details (+image)' })
+  async aiDraft(
+    @Body()
+    dto: {
+      name: string;
+      brief?: string;
+      brand?: string;
+      attributes?: { key: string; value: string }[];
+      imageUrl?: string;
+    },
+  ) {
+    return this.productAi.draft(dto);
   }
 
   @Get()

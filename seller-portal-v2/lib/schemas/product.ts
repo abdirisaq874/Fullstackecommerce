@@ -99,6 +99,9 @@ export const productFormSchema = z
     brandId: z.string().optional().default(''),
     shortDescription: z.string().max(500, 'Max 500 characters').optional().default(''),
     description: z.string().optional().default(''),
+    // AI-generated, system-managed discovery signals.
+    tags: z.array(z.string()).default([]),
+    keywords: z.array(z.string()).default([]),
     status: productStatusSchema.default('draft'),
     isFeatured: z.boolean().default(false),
 
