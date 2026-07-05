@@ -59,12 +59,14 @@ services:
       SEARCH_PRODUCT_INDEX: products_v1
       SEARCH_DEFAULT_LOCALE: en
       SEARCH_LOCALES: "en,so"
-      SEARCH_ENABLE_VECTOR: "1"
+      # Vector search deferred: hosted Qwen3-8B query embedding was too slow
+      # (1-17s) and noisy on a tiny catalog. Lexical BM25 is fast + precise.
+      # Revisit with a fast embedder + tuned hybrid fusion + more catalog.
+      SEARCH_ENABLE_VECTOR: "0"
       SEARCH_ENABLE_RERANK: "0"
       SEARCH_ENABLE_QUERY_UNDERSTANDING: "0"
       SEARCH_ENABLE_TRANSLATION: "0"
-      # Semantic search embeddings via OpenRouter Qwen3 (Cohere key was a placeholder).
-      EMBEDDINGS_PROVIDER: openrouter
+      EMBEDDINGS_PROVIDER: none
       EMBEDDINGS_DIMS: "1024"
       COHERE_API_KEY: ${COHERE_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
