@@ -33,9 +33,9 @@ export class SellersService {
   private async resolveUserId(idOrSlug: string): Promise<string | null> {
     const bySlug = await this.settingsModel
       .findOne({ 'storeProfile.slug': idOrSlug })
-      .select('userId')
+      .select('sellerId')
       .lean();
-    if (bySlug) return String((bySlug as any).userId);
+    if (bySlug) return String((bySlug as any).sellerId);
     return OID.test(idOrSlug) ? idOrSlug : null;
   }
 
@@ -45,7 +45,7 @@ export class SellersService {
 
     const [user, settings, stats] = await Promise.all([
       this.userModel.findById(userId).select('firstName lastName avatarUrl role createdAt').lean(),
-      this.settingsModel.findOne({ userId: new Types.ObjectId(userId) }).select('storeProfile').lean(),
+      this.settingsModel.findOne({ sellerId: new Types.ObjectId(userId) }).select('storeProfile').lean(),
       this.productModel.aggregate([
         { $match: { sellerId: new Types.ObjectId(userId), status: 'active', isDeleted: { $ne: true } } },
         { $group: { _id: null, count: { $sum: 1 }, rating: { $avg: '$avgRating' }, reviews: { $sum: '$reviewCount' } } },
