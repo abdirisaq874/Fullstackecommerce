@@ -49,34 +49,52 @@ export class CartService {
     userId: string | undefined,
     sessionId: string | undefined,
     productId: string,
-    variantSku: string,
+    variantSku: string | undefined,
     quantity: number,
   ): Promise<CartDocument> {
-    // Validate product and variant
+    // Validate product
     const product = await this.productModel.findById(productId);
     if (!product || product.status !== 'active') {
       throw new NotFoundException('Product not found');
     }
 
-    const variant = product.variants.find((v) => v.sku === variantSku);
-    if (!variant || !variant.isActive) {
-      throw new NotFoundException('Variant not found');
+    const hasVariants = Array.isArray(product.variants) && product.variants.length > 0;
+
+    // Resolve line-item details from either the chosen variant or, for simple
+    // (variant-less) products, the product itself.
+    let effectiveSku: string;
+    let price: number;
+    let variantName: string;
+    let available: number;
+
+    if (hasVariants) {
+      const variant = product.variants.find((v) => v.sku === variantSku);
+      if (!variant || !variant.isActive) {
+        throw new NotFoundException('Variant not found');
+      }
+      effectiveSku = variant.sku;
+      price = variant.priceOverride || product.basePrice;
+      variantName = variant.name || variant.sku;
+      available = await this.inventoryService.checkStock(variant.sku);
+    } else {
+      // Simple product: no SKU-level inventory — use the product's own stock.
+      effectiveSku = `simple:${product._id.toString()}`;
+      price = product.basePrice;
+      variantName = product.name;
+      available = product.stock ?? 0;
     }
 
-    // Check stock
-    const available = await this.inventoryService.checkStock(variantSku);
     if (available < quantity) {
       throw new BadRequestException(`Only ${available} items available`);
     }
 
-    const price = variant.priceOverride || product.basePrice;
     const primaryImage = product.images.find((i) => i.isPrimary) || product.images[0];
 
     const cartItem = {
       productId: product._id,
-      variantSku,
+      variantSku: effectiveSku,
       productName: product.name,
-      variantName: variant.name || variantSku,
+      variantName,
       imageUrl: primaryImage?.url || '',
       quantity,
       unitPrice: price,
@@ -89,7 +107,7 @@ export class CartService {
       }
 
       // Check if item already in cart
-      const existing = cart.items.find((i) => i.variantSku === variantSku);
+      const existing = cart.items.find((i) => i.variantSku === effectiveSku);
       if (existing) {
         existing.quantity += quantity;
         existing.unitPrice = price;
@@ -104,7 +122,7 @@ export class CartService {
     // Guest cart → Redis
     if (sessionId) {
       const existing = (await this.redis.getJson<any[]>(`cart:${sessionId}`)) || [];
-      const idx = existing.findIndex((i: any) => i.variantSku === variantSku);
+      const idx = existing.findIndex((i: any) => i.variantSku === effectiveSku);
       if (idx >= 0) {
         existing[idx].quantity += quantity;
         existing[idx].unitPrice = price;

@@ -1,7 +1,7 @@
 import { apiSlice } from './apiSlice';
 import type { Cart } from '@/types';
 
-interface AddItemBody { productId: string; variantSku: string; quantity: number }
+interface AddItemBody { productId: string; variantSku?: string; quantity: number }
 
 export const cartApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({

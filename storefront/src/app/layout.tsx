@@ -4,9 +4,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import './globals.css';
 import { Providers } from '@/components/providers';
-import { Header } from '@/components/layout/Header';
-import { Footer } from '@/components/layout/Footer';
-import { CartDrawer } from '@/components/layout/CartDrawer';
+import { SiteChrome } from '@/components/layout/SiteChrome';
 import { SITE_NAME } from '@/lib/utils';
 
 // Space Grotesk throughout (display + body); IBM Plex Mono for utility labels.
@@ -29,10 +27,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="flex min-h-screen flex-col">
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Providers>
-            <Header />
-            <main className="flex-1">{children}</main>
-            <Footer />
-            <CartDrawer />
+            <SiteChrome>{children}</SiteChrome>
           </Providers>
         </NextIntlClientProvider>
       </body>

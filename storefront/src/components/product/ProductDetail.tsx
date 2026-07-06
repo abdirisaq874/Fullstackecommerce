@@ -70,8 +70,12 @@ export function ProductDetail({ slug }: { slug: string }) {
     }
   }, [product]);
 
+  const hasVariants = (product?.variants?.length ?? 0) > 0;
   const { data: stock } = useCheckStockQuery(selectedVariant?.sku ?? '', { skip: !selectedVariant?.sku });
-  const outOfStock = stock?.inStock === false || stock?.available === 0;
+  // Variant products use SKU-level inventory; simple products use product.stock.
+  const outOfStock = hasVariants
+    ? stock?.inStock === false || stock?.available === 0
+    : ((product as any)?.stock ?? 1) <= 0;
   const wished = useAppSelector((s) => (product ? s.wishlist.items.some((w) => w.productId === product._id) : false));
 
   if (isLoading) return <DetailSkeleton />;
@@ -104,12 +108,12 @@ export function ProductDetail({ slug }: { slug: string }) {
 
   const handleAdd = (buyNow = false) =>
     requireAuth(async () => {
-      if (!selectedVariant) {
-        toast.error('This product is unavailable');
+      if (hasVariants && !selectedVariant) {
+        toast.error('Please select an option');
         return;
       }
       try {
-        await addToCart({ productId: product._id, variantSku: selectedVariant.sku, quantity: qty }).unwrap();
+        await addToCart({ productId: product._id, variantSku: selectedVariant?.sku, quantity: qty }).unwrap();
         if (buyNow) router.push('/checkout');
         else {
           toast.success('Added to cart');
@@ -230,10 +234,10 @@ export function ProductDetail({ slug }: { slug: string }) {
           {/* Actions */}
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <QtyStepper value={qty} onChange={setQty} />
-            <Button size="lg" loading={adding} disabled={outOfStock || !selectedVariant} onClick={() => handleAdd(false)} className="flex-1 gap-2">
+            <Button size="lg" loading={adding} disabled={outOfStock || (hasVariants && !selectedVariant)} onClick={() => handleAdd(false)} className="flex-1 gap-2">
               <ShoppingBag className="h-5 w-5" /> Add to cart
             </Button>
-            <Button size="lg" variant="secondary" disabled={outOfStock || !selectedVariant} onClick={() => handleAdd(true)}>
+            <Button size="lg" variant="secondary" disabled={outOfStock || (hasVariants && !selectedVariant)} onClick={() => handleAdd(true)}>
               Buy now
             </Button>
             <Button

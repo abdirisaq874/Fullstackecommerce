@@ -9,7 +9,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 class AddToCartDto {
   @ApiProperty() @IsString() productId: string;
-  @ApiProperty() @IsString() variantSku: string;
+  // Optional: simple products (no variants) are added by productId alone.
+  @ApiPropertyOptional() @IsOptional() @IsString() variantSku?: string;
   @ApiProperty() @IsNumber() @Min(1) quantity: number;
   @ApiPropertyOptional() @IsOptional() @IsString() sessionId?: string;
 }
