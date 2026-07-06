@@ -149,7 +149,15 @@ export class CartService {
     if (quantity <= 0) {
       cart.items = cart.items.filter((i) => i.variantSku !== variantSku) as any;
     } else {
-      const available = await this.inventoryService.checkStock(variantSku);
+      // Simple products carry a `simple:<productId>` sentinel SKU and use
+      // product-level stock; variant products use SKU-level inventory.
+      let available: number;
+      if (variantSku.startsWith('simple:')) {
+        const product = await this.productModel.findById(variantSku.slice('simple:'.length));
+        available = product?.stock ?? 0;
+      } else {
+        available = await this.inventoryService.checkStock(variantSku);
+      }
       if (available < quantity) {
         throw new BadRequestException(`Only ${available} items available`);
       }
@@ -263,13 +271,21 @@ export class CartService {
         continue; // Remove stale items
       }
 
-      const variant = product.variants.find((v) => v.sku === item.variantSku);
-      if (!variant || !variant.isActive) {
-        updated = true;
-        continue;
+      const hasVariants = Array.isArray(product.variants) && product.variants.length > 0;
+
+      let currentPrice: number;
+      if (hasVariants) {
+        const variant = product.variants.find((v) => v.sku === item.variantSku);
+        if (!variant || !variant.isActive) {
+          updated = true;
+          continue; // variant removed/disabled → drop stale line
+        }
+        currentPrice = variant.priceOverride || product.basePrice;
+      } else {
+        // Simple product (sentinel SKU) — price comes from the product itself.
+        currentPrice = product.basePrice;
       }
 
-      const currentPrice = variant.priceOverride || product.basePrice;
       if (item.unitPrice !== currentPrice) {
         item.unitPrice = currentPrice;
         updated = true;
