@@ -62,6 +62,17 @@ export class FacetsService {
       brands: { terms: { field: 'brandSlug', size: 20 } },
       price: { stats: { field: 'basePrice' } },
       ratings: { range: { field: 'avgRating', ranges: [{ from: 4 }, { from: 3 }, { from: 2 }] } },
+      // Generic attribute facets (top keys + values) — surfaces colour/size/etc.
+      // even for categories with no explicit facet config.
+      attributes_generic: {
+        nested: { path: 'attributes' },
+        aggs: {
+          keys: {
+            terms: { field: 'attributes.key', size: 8 },
+            aggs: { values: { terms: { field: 'attributes.value', size: 12 } } },
+          },
+        },
+      },
     };
 
     for (const facet of category?.facets || []) {
@@ -133,6 +144,21 @@ export class FacetsService {
           });
         }
       }
+    }
+
+    // Generic attribute facets for any key not already covered by config above.
+    const already = new Set(out.map((f) => f.key));
+    for (const kb of aggs.attributes_generic?.keys?.buckets || []) {
+      const key = String(kb.key);
+      if (already.has(key)) continue;
+      const values = (kb.values?.buckets || []).filter((v: any) => v.doc_count > 0);
+      if (!values.length) continue;
+      out.push({
+        key,
+        type: 'terms',
+        label: key.charAt(0).toUpperCase() + key.slice(1),
+        options: values.map((v: any) => ({ value: String(v.key), count: v.doc_count })),
+      });
     }
     return out;
   }

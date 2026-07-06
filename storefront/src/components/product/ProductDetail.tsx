@@ -16,6 +16,7 @@ import { useProductBySlugQuery } from '@/store/api/productsApi';
 import { useAddToCartMutation } from '@/store/api/cartApi';
 import { useCheckStockQuery } from '@/store/api/inventoryApi';
 import { useCreateThreadMutation } from '@/store/api/messagesApi';
+import { useSellerQuery } from '@/store/api/sellersApi';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { openCart } from '@/store/slices/uiSlice';
 import { toggleWishlist } from '@/store/slices/wishlistSlice';
@@ -40,6 +41,8 @@ export function ProductDetail({ slug }: { slug: string }) {
   const [addToCart, { isLoading: adding }] = useAddToCartMutation();
   const [createThread, { isLoading: messaging }] = useCreateThreadMutation();
   const { track } = useRecentlyViewed();
+  const sellerRef = (product as any)?.sellerId as string | undefined;
+  const { data: sellerInfo } = useSellerQuery(sellerRef ?? '', { skip: !sellerRef });
 
   const [activeImg, setActiveImg] = useState(0);
   const [qty, setQty] = useState(1);
@@ -209,6 +212,14 @@ export function ProductDetail({ slug }: { slug: string }) {
             <Rating value={product.avgRating} count={product.reviewCount} size={18} />
             {product.totalSold ? <span className="text-sm text-muted-fg">{product.totalSold} sold</span> : null}
           </div>
+          {sellerId && (
+            <div className="mt-2 text-sm text-muted-fg">
+              Sold by{' '}
+              <Link href={`/s/${sellerId}`} className="font-semibold text-brand hover:underline">
+                {sellerInfo?.name || 'this store'}
+              </Link>
+            </div>
+          )}
 
           <div className="mt-5">
             <Price amount={price} compareAt={product.compareAtPrice} currency={product.currency} className="text-2xl [&_span:first-child]:text-3xl" />

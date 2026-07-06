@@ -42,12 +42,13 @@ export function ProductListing({
   const priceMax = params.get('priceMax') ? Number(params.get('priceMax')) : undefined;
   const rating = params.get('rating') ? Number(params.get('rating')) : undefined;
   const page = params.get('page') ? Number(params.get('page')) : 1;
+  const attrs = useMemo(() => params.getAll('attr'), [params]);
 
   const locale = useLocale();
   // Smart multilingual search first; gracefully fall back to /products if the
   // search service is unavailable (e.g. OpenSearch not running).
   const smart = useSmartSearchQuery({
-    q, locale, category, brand, priceMin, priceMax, rating, sort: sortBy || undefined, page, limit: PAGE_SIZE,
+    q, locale, category, brand, priceMin, priceMax, rating, sort: sortBy || undefined, page, limit: PAGE_SIZE, attr: attrs,
   });
   const useFallback = smart.isError;
   const fallback = useListProductsQuery(
@@ -73,6 +74,27 @@ export function ProductListing({
     [params, pathname, router],
   );
 
+  // Toggle one attribute value (key:value) among possibly many `attr` params.
+  const toggleAttr = useCallback(
+    (key: string, value: string) => {
+      const token = `${key}:${value}`;
+      const sp = new URLSearchParams(params.toString());
+      const current = sp.getAll('attr');
+      sp.delete('attr');
+      (current.includes(token) ? current.filter((t) => t !== token) : [...current, token]).forEach((t) => sp.append('attr', t));
+      sp.delete('page');
+      router.push(`${pathname}?${sp.toString()}`);
+    },
+    [params, pathname, router],
+  );
+
+  // Dynamic facets from the search response (counts + attribute facets).
+  const facets = useFallback ? [] : (smart.data?.facets ?? []);
+  const KNOWN_FACETS = ['brand', 'price', 'rating', 'category'];
+  const attrFacets = facets.filter((f) => !KNOWN_FACETS.includes(f.key) && (f.options?.length ?? 0) > 0);
+  const ratingCounts = new Map((facets.find((f) => f.key === 'rating')?.options ?? []).map((o) => [o.value, o.count]));
+  const brandCounts = new Map((facets.find((f) => f.key === 'brand')?.options ?? []).map((o) => [o.value, o.count]));
+
   const total = useFallback ? (fallback.data?.meta.total ?? 0) : (smart.data?.meta.total ?? 0);
   const totalPages = useFallback ? (fallback.data?.meta.totalPages ?? 1) : (smart.data?.meta.totalPages ?? 1);
   const items = useFallback
@@ -86,8 +108,13 @@ export function ProductListing({
     if (!fixedBrand && brand) chips.push({ label: brand, clear: () => setParam({ brand: undefined }) });
     if (priceMin || priceMax) chips.push({ label: `$${priceMin ?? 0}–${priceMax ?? '∞'}`, clear: () => setParam({ priceMin: undefined, priceMax: undefined }) });
     if (rating) chips.push({ label: `${rating}★ & up`, clear: () => setParam({ rating: undefined }) });
+    for (const t of attrs) {
+      const [k, ...rest] = t.split(':');
+      const v = rest.join(':');
+      chips.push({ label: `${k}: ${v}`, clear: () => toggleAttr(k, v) });
+    }
     return chips;
-  }, [q, category, brand, priceMin, priceMax, rating, fixedCategory, fixedBrand, setParam]);
+  }, [q, category, brand, priceMin, priceMax, rating, attrs, fixedCategory, fixedBrand, setParam, toggleAttr]);
 
   const prettify = (s?: string) => s?.replace(/-/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
   const catName = fixedCategory ? (categories ?? []).find((c) => c.slug === fixedCategory)?.name : undefined;
@@ -112,11 +139,14 @@ export function ProductListing({
       {!fixedBrand && (brands?.length ?? 0) > 0 && (
         <FilterGroup title="Brand">
           <div className="space-y-1">
-            {(brands ?? []).slice(0, 12).map((b) => (
-              <FilterOption key={b._id} active={brand === b.slug} onClick={() => setParam({ brand: brand === b.slug ? undefined : b.slug })}>
-                {b.name}
-              </FilterOption>
-            ))}
+            {(brands ?? []).slice(0, 12).map((b) => {
+              const count = brandCounts.get(b.slug);
+              return (
+                <FilterOption key={b._id} active={brand === b.slug} onClick={() => setParam({ brand: brand === b.slug ? undefined : b.slug })}>
+                  {b.name}{count ? ` (${count})` : ''}
+                </FilterOption>
+              );
+            })}
           </div>
         </FilterGroup>
       )}
@@ -125,17 +155,36 @@ export function ProductListing({
       </FilterGroup>
       <FilterGroup title="Rating">
         <div className="flex flex-wrap gap-2">
-          {RATINGS.map((r) => (
-            <button
-              key={r}
-              onClick={() => setParam({ rating: rating === r ? undefined : String(r) })}
-              className={cn('rounded-full border-2 px-3 py-1 text-sm font-semibold transition', rating === r ? 'border-brand bg-brand text-white' : 'border-line hover:border-brand')}
-            >
-              {r}★ & up
-            </button>
-          ))}
+          {RATINGS.map((r) => {
+            const count = ratingCounts.get(`${r}+`);
+            return (
+              <button
+                key={r}
+                onClick={() => setParam({ rating: rating === r ? undefined : String(r) })}
+                className={cn('rounded-full border-2 px-3 py-1 text-sm font-semibold transition', rating === r ? 'border-brand bg-brand text-white' : 'border-line hover:border-brand')}
+              >
+                {r}★ & up{count ? ` (${count})` : ''}
+              </button>
+            );
+          })}
         </div>
       </FilterGroup>
+
+      {/* Dynamic attribute facets (colour, size, …) from the search response */}
+      {attrFacets.map((f) => (
+        <FilterGroup key={f.key} title={f.label}>
+          <div className="space-y-1">
+            {(f.options ?? []).map((o) => {
+              const active = attrs.includes(`${f.key}:${o.value}`);
+              return (
+                <FilterOption key={o.value} active={active} onClick={() => toggleAttr(f.key, o.value)}>
+                  {o.value} ({o.count})
+                </FilterOption>
+              );
+            })}
+          </div>
+        </FilterGroup>
+      ))}
     </div>
   );
 
