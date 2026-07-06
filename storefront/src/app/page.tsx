@@ -1,6 +1,7 @@
 import { Hero } from '@/components/home/Hero';
 import {
   TrustStrip, DealsOfDay, SpotlightRail, NewArrivals, BestSellers, BrandTiles, WhyUsReviews, Newsletter,
+  ForYou, RecentlyViewed,
 } from '@/components/home/sections';
 
 export default function HomePage() {
@@ -8,12 +9,14 @@ export default function HomePage() {
     <>
       <Hero />
       <TrustStrip />
+      <ForYou />
       <DealsOfDay />
       <SpotlightRail title="Popular in Tech" sortBy="popular" href="/c/electronics" />
       <SpotlightRail title="Popular in Home & Kitchen" sortBy="newest" href="/c/home-and-garden" />
       <BrandTiles />
       <NewArrivals />
       <BestSellers />
+      <RecentlyViewed />
       <WhyUsReviews />
       <Newsletter />
     </>

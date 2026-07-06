@@ -2,11 +2,12 @@
 
 import { SectionHeading } from '@/components/ui';
 import { ProductCard, ProductCardSkeleton, productToCard } from '@/components/product/ProductCard';
-import { useListProductsQuery } from '@/store/api/productsApi';
+import { useRelatedProductsQuery } from '@/store/api/recommendationsApi';
 
-export function RelatedProducts({ categorySlug, excludeId }: { categorySlug: string; excludeId: string }) {
-  const { data, isLoading } = useListProductsQuery({ category: categorySlug, limit: 10, sortBy: 'popular' });
-  const items = (data?.data ?? []).filter((p) => p._id !== excludeId).slice(0, 5).map(productToCard);
+/** Semantically similar products (vector k-NN, category fallback server-side). */
+export function RelatedProducts({ productId }: { productId: string }) {
+  const { data, isLoading } = useRelatedProductsQuery({ productId, limit: 5 });
+  const items = (data ?? []).map(productToCard);
 
   if (!isLoading && items.length === 0) return null;
 

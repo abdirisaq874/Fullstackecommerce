@@ -11,7 +11,7 @@ export function AuthShell({ title, subtitle, children, footer }: {
 }) {
   const t = useTranslations('auth');
   return (
-    <div className="grid min-h-[calc(100vh-8rem)] lg:grid-cols-2">
+    <div className="grid min-h-dvh lg:grid-cols-2">
       {/* Brand panel */}
       <div className="relative hidden overflow-hidden bg-brand-gradient lg:flex lg:flex-col lg:justify-between lg:p-12 lg:text-white">
         <div className="absolute -right-20 -top-20 h-80 w-80 rounded-full bg-white/10 blur-2xl" />

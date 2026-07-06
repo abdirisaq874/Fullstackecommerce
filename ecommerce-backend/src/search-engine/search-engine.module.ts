@@ -60,6 +60,6 @@ import { CatalogSearchController } from './catalog-search.controller';
     FacetsService,
     CatalogSearchService,
   ],
-  exports: [IndexingService, IndexAdminService],
+  exports: [IndexingService, IndexAdminService, RetrievalService, EmbeddingsService],
 })
 export class SearchEngineModule {}

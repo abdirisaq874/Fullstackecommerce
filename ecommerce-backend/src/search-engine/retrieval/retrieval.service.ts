@@ -110,6 +110,42 @@ export class RetrievalService {
     }
   }
 
+  /**
+   * Nearest neighbours to a product's own vector — "related / similar products".
+   * Unlike `vector()` there is NO min-score gate: we always want the top-K most
+   * similar active products (excluding the product itself).
+   */
+  async similar(vector: number[], size: number, excludeProductId: string): Promise<Hit[]> {
+    if (!vector || vector.length === 0) return [];
+    try {
+      const res = await this.client.search({
+        index: this.index,
+        body: {
+          size,
+          query: {
+            knn: {
+              embedding: {
+                vector,
+                k: size + 1,
+                filter: {
+                  bool: {
+                    must_not: [{ ids: { values: [excludeProductId] } }],
+                    filter: [{ term: { status: 'active' } }],
+                  },
+                },
+              },
+            },
+          },
+          _source: { excludes: ['embedding'] },
+        },
+      });
+      return this.mapHits(res.body as any).filter((h) => h.id !== excludeProductId).slice(0, size);
+    } catch (err) {
+      this.logger.error(`Similar search failed: ${(err as Error).message}`);
+      return [];
+    }
+  }
+
   private mapHits(body: any): Hit[] {
     return (body?.hits?.hits ?? []).map((h: any) => ({
       id: h._id,

@@ -21,6 +21,8 @@ import { openCart } from '@/store/slices/uiSlice';
 import { toggleWishlist } from '@/store/slices/wishlistSlice';
 import { ProductReviews } from './ProductReviews';
 import { RelatedProducts } from './RelatedProducts';
+import { FrequentlyBoughtTogether } from './FrequentlyBoughtTogether';
+import { useRecentlyViewed } from '@/hooks/useRecentlyViewed';
 import type { Category } from '@/types';
 
 const PLACEHOLDER =
@@ -37,6 +39,7 @@ export function ProductDetail({ slug }: { slug: string }) {
   const { data: product, isLoading, isError } = useProductBySlugQuery(slug);
   const [addToCart, { isLoading: adding }] = useAddToCartMutation();
   const [createThread, { isLoading: messaging }] = useCreateThreadMutation();
+  const { track } = useRecentlyViewed();
 
   const [activeImg, setActiveImg] = useState(0);
   const [qty, setQty] = useState(1);
@@ -69,6 +72,20 @@ export function ProductDetail({ slug }: { slug: string }) {
       setSelected(Object.fromEntries(first.options.map((o) => [o.name, o.value])));
     }
   }, [product]);
+
+  // Record the view for "Recently viewed" + personalized "For you".
+  useEffect(() => {
+    if (!product) return;
+    const img = product.images?.find((i) => i.isPrimary) ?? product.images?.[0];
+    track({
+      id: product._id,
+      slug: product.slug,
+      name: product.name,
+      price: product.basePrice,
+      currency: product.currency,
+      imageUrl: img?.url,
+    });
+  }, [product, track]);
 
   const hasVariants = (product?.variants?.length ?? 0) > 0;
   const { data: stock } = useCheckStockQuery(selectedVariant?.sku ?? '', { skip: !selectedVariant?.sku });
@@ -308,8 +325,9 @@ export function ProductDetail({ slug }: { slug: string }) {
         </div>
       </div>
 
-      {/* Related */}
-      {categoryObj?.slug && <RelatedProducts categorySlug={categoryObj.slug} excludeId={product._id} />}
+      {/* Recommendations: complements (co-purchase) then similar items */}
+      <FrequentlyBoughtTogether productId={product._id} />
+      <RelatedProducts productId={product._id} />
     </Container>
   );
 }

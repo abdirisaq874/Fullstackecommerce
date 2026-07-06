@@ -14,6 +14,8 @@ import {
 import {
   useFeaturedProductsQuery, useListProductsQuery, useBrandsQuery,
 } from '@/store/api/productsApi';
+import { useForYouQuery } from '@/store/api/recommendationsApi';
+import { useRecentlyViewed } from '@/hooks/useRecentlyViewed';
 
 /* ── Trust strip ─────────────────────────────────────────────────────── */
 export function TrustStrip() {
@@ -79,6 +81,35 @@ function Grid({ items, loading, cols = 4, count = 8 }: {
         ? Array.from({ length: count }).map((_, i) => <ProductCardSkeleton key={i} />)
         : items.slice(0, count).map((it) => <ProductCard key={it.id} item={it} />)}
     </div>
+  );
+}
+
+/* ── Personalized: recommended for you (recently-viewed + trending) ──── */
+export function ForYou() {
+  const { ids } = useRecentlyViewed();
+  const { data, isLoading } = useForYouQuery({ viewed: ids, limit: 12 });
+  const items = (data ?? []).map(productToCard);
+  if (!isLoading && items.length === 0) return null;
+  return (
+    <Container className="py-8">
+      <SectionHeading eyebrow="Picked for you" title="Recommended for you" />
+      <Grid items={items} loading={isLoading} cols={6} count={12} />
+    </Container>
+  );
+}
+
+/* ── Recently viewed (client-side history) ───────────────────────────── */
+export function RecentlyViewed() {
+  const { items: viewed } = useRecentlyViewed();
+  if (viewed.length === 0) return null;
+  const items: ProductCardItem[] = viewed.map((v) => ({
+    id: v.id, slug: v.slug, name: v.name, price: v.price, currency: v.currency || 'USD', imageUrl: v.imageUrl,
+  }));
+  return (
+    <Container className="py-8">
+      <SectionHeading eyebrow="Pick up where you left off" title="Recently viewed" />
+      <Grid items={items} loading={false} cols={6} count={12} />
+    </Container>
   );
 }
 
