@@ -28,6 +28,29 @@ export class RetrievalService {
     return this.config.get<string>('search.opensearch.productIndex') || 'products_v1';
   }
 
+  /**
+   * Build the per-locale text `should` clauses (multi_match + phrase-prefix).
+   * Shared by lexical retrieval AND facet aggregation so facets reflect the
+   * actual search query, not just the structural filters.
+   */
+  buildTextShould(queries: Record<string, string>, locale: string): any[] {
+    const should: any[] = [];
+    for (const [loc, qstr] of Object.entries(queries)) {
+      if (!qstr?.trim()) continue;
+      const localeBoost = loc === locale ? 2 : 1;
+      should.push({
+        multi_match: {
+          query: qstr,
+          type: 'best_fields',
+          fuzziness: 'AUTO',
+          fields: [`name_${loc}^${3 * localeBoost}`, `shortDescription_${loc}^2`, `description_${loc}`],
+        },
+      });
+      should.push({ match_phrase_prefix: { [`name_${loc}`]: { query: qstr, boost: 2 * localeBoost } } });
+    }
+    return should;
+  }
+
   /** Lexical BM25 across all stored locales; current locale boosted. */
   async lexical(
     queries: Record<string, string>,
@@ -37,29 +60,7 @@ export class RetrievalService {
     locale: string,
   ): Promise<{ total: number; hits: Hit[] }> {
     const filter = buildOpenSearchFilters(filters, category);
-    const should: any[] = [];
-
-    for (const [loc, qstr] of Object.entries(queries)) {
-      if (!qstr?.trim()) continue;
-      const localeBoost = loc === locale ? 2 : 1;
-      should.push({
-        multi_match: {
-          query: qstr,
-          type: 'best_fields',
-          fuzziness: 'AUTO',
-          fields: [
-            `name_${loc}^${3 * localeBoost}`,
-            `shortDescription_${loc}^2`,
-            `description_${loc}`,
-          ],
-        },
-      });
-      // phrase-prefix on name → cheap "as you type" / strong exact-ish matches
-      should.push({
-        match_phrase_prefix: { [`name_${loc}`]: { query: qstr, boost: 2 * localeBoost } },
-      });
-    }
-
+    const should = this.buildTextShould(queries, locale);
     const hasText = should.length > 0;
     const query = hasText
       ? { bool: { should, minimum_should_match: 1, filter } }

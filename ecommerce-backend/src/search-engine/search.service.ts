@@ -74,12 +74,14 @@ export class CatalogSearchService {
       ? await this.categoryModel.findOne({ slug: filters.categorySlug }).lean()
       : null;
 
-    // 2) Parallel retrieval + facets
+    // 2) Parallel retrieval + facets (facets get the text query too, so they
+    //    reflect the actual results — not the whole catalog).
     const cleaned = understood?.cleaned || q || '';
+    const textShould = this.retrieval.buildTextShould(queries, locale);
     const [lexical, vectorHits, facets] = await Promise.all([
       this.retrieval.lexical(queries, filters, category, CANDIDATE_SIZE, locale),
       this.retrieveVector(cleaned, filters, category),
-      this.facets.compute(filters, category, locale),
+      this.facets.compute(filters, category, locale, textShould),
     ]);
 
     // 3) Merge sources + RRF fuse

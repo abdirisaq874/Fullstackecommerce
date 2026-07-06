@@ -42,13 +42,19 @@ export class FacetsService {
     filters: ResolvedFilters,
     category: { _id?: any; facets?: CategoryFacet[] } | null,
     locale: string,
+    textShould: any[] = [],
   ): Promise<Facet[]> {
     const filter = buildOpenSearchFilters(filters, category);
     const aggs = this.buildAggs(category);
+    // Facets must reflect the search query too — otherwise they list options
+    // for the whole catalog regardless of what the user searched.
+    const query = textShould.length
+      ? { bool: { filter, should: textShould, minimum_should_match: 1 } }
+      : { bool: { filter } };
     try {
       const res = await this.client.search({
         index: this.index,
-        body: { size: 0, query: { bool: { filter } }, aggs },
+        body: { size: 0, query, aggs },
       });
       return this.parse((res.body as any).aggregations, category, locale);
     } catch (err) {
