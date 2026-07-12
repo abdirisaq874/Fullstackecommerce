@@ -46,6 +46,10 @@ export class RetrievalService {
           // Require the first 2 chars to match before fuzzing — stops wild
           // cross-word matches like "speaker"→"sweater"/"Bone Shaker".
           prefix_length: 2,
+          // Multi-word queries must match most of their terms, not just one —
+          // otherwise a lone common word (esp. un-stopped English words in the
+          // Somali-fallback fields) matches nearly the whole catalog.
+          minimum_should_match: '2<70%',
           fields: [`name_${loc}^${3 * localeBoost}`, `shortDescription_${loc}^2`, `description_${loc}`],
         },
       });
