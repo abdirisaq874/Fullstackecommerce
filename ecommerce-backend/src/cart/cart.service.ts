@@ -75,7 +75,9 @@ export class CartService {
       effectiveSku = variant.sku;
       price = variant.priceOverride || product.basePrice;
       variantName = variant.name || variant.sku;
-      available = await this.inventoryService.checkStock(variant.sku);
+      // Fall back to product-level stock when the SKU isn't inventory-tracked
+      // (imported/seeded variants have no Inventory records).
+      available = (await this.inventoryService.checkStock(variant.sku)) || (product.stock ?? 0);
     } else {
       // Simple product: no SKU-level inventory — use the product's own stock.
       effectiveSku = `simple:${product._id.toString()}`;
@@ -157,6 +159,10 @@ export class CartService {
         available = product?.stock ?? 0;
       } else {
         available = await this.inventoryService.checkStock(variantSku);
+        if (available <= 0) {
+          const product = await this.productModel.findById(item.productId);
+          available = product?.stock ?? 0;
+        }
       }
       if (available < quantity) {
         throw new BadRequestException(`Only ${available} items available`);

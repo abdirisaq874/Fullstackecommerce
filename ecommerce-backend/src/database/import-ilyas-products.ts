@@ -25,6 +25,10 @@ const SELLER = {
 
 const slugify = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 70);
 
+// CSV prices are Turkish Lira; convert to USD.
+const TL_TO_USD = 46.7;
+const toUsd = (n: number) => Math.round((n / TL_TO_USD) * 100) / 100;
+
 /** RFC-4180 CSV parser (handles quoted fields, embedded commas/newlines/quotes). */
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
@@ -92,17 +96,44 @@ async function main() {
     if (seenSlugs.has(slug)) slug = `${slug}-${i}`;
     seenSlugs.add(slug);
 
-    const images = String(r[cImg] || '')
-      .split(/[\s|;]+/).map((u) => u.trim()).filter((u) => /^https?:\/\//.test(u)).slice(0, 8)
-      .map((url, idx) => ({ url, isPrimary: idx === 0, sortOrder: idx }));
-    if (!images.length) images.push({ url: `https://picsum.photos/seed/${slug}/800/800`, isPrimary: true, sortOrder: 0 });
+    // Colour variants: "Colour: [url,url] | Colour2: [url] | ..."
+    const colors = [...String(r[cColor] || '').matchAll(/([^:[\]]+):\s*\[([^\]]*)\]/g)]
+      .map((m) => ({
+        name: m[1].replace(/^[\s|]+/, '').trim(),
+        images: m[2].split(',').map((u) => u.trim()).filter((u) => /^https?:\/\//.test(u)),
+      }))
+      .filter((c) => c.name);
+    const sizes = String(r[cSize] || '').split('|').map((s) => s.trim()).filter(Boolean);
 
+    // Product gallery = all colour images + CDNImages, deduped
+    const cdn = String(r[cImg] || '').split(/[\s|;,]+/).map((u) => u.trim()).filter((u) => /^https?:\/\//.test(u));
+    let imgUrls = Array.from(new Set([...colors.flatMap((c) => c.images), ...cdn])).slice(0, 12);
+    if (!imgUrls.length) imgUrls = [`https://picsum.photos/seed/${slug}/800/800`];
+    const images = imgUrls.map((url, idx) => ({ url, isPrimary: idx === 0, sortOrder: idx }));
+
+    // Variants = Colour × Size (whichever dimensions the product has)
+    const colorNames = colors.map((c) => c.name);
+    const combos: { color?: string; size?: string }[] = [];
+    if (colorNames.length && sizes.length) { for (const c of colorNames) for (const s of sizes) combos.push({ color: c, size: s }); }
+    else if (colorNames.length) colorNames.forEach((c) => combos.push({ color: c }));
+    else if (sizes.length) sizes.forEach((s) => combos.push({ size: s }));
+    const usedSkus = new Set<string>();
+    const variants = combos.slice(0, 150).map((v, idx) => {
+      const options: { name: string; value: string }[] = [];
+      if (v.color) options.push({ name: 'Color', value: v.color });
+      if (v.size) options.push({ name: 'Size', value: v.size });
+      let vsku = [sku, v.color && slugify(v.color).slice(0, 14), v.size && slugify(String(v.size))].filter(Boolean).join('-');
+      if (!vsku || usedSkus.has(vsku)) vsku = `${sku}-v${idx}`;
+      usedSkus.add(vsku);
+      return { sku: vsku, name: options.map((o) => o.value).join(' / '), isActive: true, sortOrder: idx, options };
+    });
+
+    // Remaining Properties → attributes (Size is now a variant dimension)
     const attributes: { key: string; value: string }[] = [];
     const parts = String(r[cProp] || '').split('|').map((p) => p.trim()).filter(Boolean);
     for (let p = 0; p + 1 < parts.length && attributes.length < 15; p += 2) {
       if (parts[p] && parts[p + 1]) attributes.push({ key: parts[p], value: parts[p + 1] });
     }
-    if (r[cSize]?.trim()) attributes.unshift({ key: 'Size', value: r[cSize].trim() });
 
     docs.push({
       name,
@@ -111,8 +142,8 @@ async function main() {
       categoryId: catByName.get(String(r[cCat] || '').toLowerCase().trim()) || fallbackCat,
       shortDescription: name.slice(0, 160),
       description: name,
-      basePrice: price,
-      compareAtPrice: Number.isFinite(old) && old > price ? old : undefined,
+      basePrice: toUsd(price),
+      compareAtPrice: Number.isFinite(old) && old > price ? toUsd(old) : undefined,
       currency: 'USD',
       stock: 25 + ((i * 13) % 200),
       status: 'active',
@@ -121,6 +152,7 @@ async function main() {
       totalSold: 0,
       attributes,
       images,
+      variants,
     });
   }
 
