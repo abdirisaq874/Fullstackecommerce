@@ -7,7 +7,7 @@ import { Auth, CurrentUser } from '../auth/guards/auth.guards';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import { PaginationDto } from '../shared/database/pagination.dto';
 import {
-  IsString, IsOptional, ValidateNested, MaxLength, MinLength, Length,
+  IsString, IsOptional, ValidateNested, MaxLength, MinLength, Length, IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -78,6 +78,11 @@ class CheckoutDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @ApiPropertyOptional({ enum: ['card', 'mpesa', 'waafi', 'cod'], default: 'cod' })
+  @IsOptional()
+  @IsEnum(['card', 'mpesa', 'waafi', 'cod'])
+  paymentMethod?: string;
 }
 
 class CancelOrderDto {
@@ -105,6 +110,7 @@ export class OrderController {
       dto.shippingAddress,
       dto.billingAddress,
       dto.notes,
+      dto.paymentMethod || 'cod',
     );
   }
 

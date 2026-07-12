@@ -1,23 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { Check, Lock, MapPin, CreditCard, ShoppingBag } from 'lucide-react';
+import {
+  Check, Lock, MapPin, CreditCard, ShoppingBag, Banknote, Smartphone, Wallet,
+  Store, ChevronRight, type LucideIcon,
+} from 'lucide-react';
 import { cn, formatPrice } from '@/lib/utils';
-import { getStripe, stripeConfigured } from '@/lib/stripe';
 import { Button, Container, EmptyState } from '@/components/ui';
 import { AddressForm } from '@/components/checkout/AddressForm';
 import { RequireAuth } from '@/components/auth/RequireAuth';
 import { useGetCartQuery } from '@/store/api/cartApi';
 import { useListAddressesQuery, useAddAddressMutation } from '@/store/api/usersApi';
 import { useCreateOrderMutation } from '@/store/api/ordersApi';
-import { useCreatePaymentIntentMutation } from '@/store/api/paymentsApi';
-import type { Address, Order } from '@/types';
+import type { Address, CartItem, PaymentMethod } from '@/types';
+
+type Step = 'address' | 'review' | 'payment' | 'place';
+const STEP_ORDER: Step[] = ['address', 'review', 'payment', 'place'];
 
 export default function CheckoutPage() {
   const t = useTranslations('checkout');
@@ -34,22 +37,44 @@ function CheckoutView() {
   const { data: cart, isLoading: cartLoading } = useGetCartQuery();
   const { data: addresses } = useListAddressesQuery();
   const [addAddress] = useAddAddressMutation();
-  const [createOrder, { isLoading: creating }] = useCreateOrderMutation();
-  const [createIntent] = useCreatePaymentIntentMutation();
+  const [createOrder, { isLoading: placing }] = useCreateOrderMutation();
 
-  const [step, setStep] = useState<'address' | 'payment'>('address');
+  const [step, setStep] = useState<Step>('address');
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [adding, setAdding] = useState(false);
   const [shipping, setShipping] = useState<Address | null>(null);
   const [notes, setNotes] = useState('');
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [order, setOrder] = useState<Order | null>(null);
+  const [payment, setPayment] = useState<PaymentMethod>('cod');
 
-  const items = cart?.items ?? [];
+  const items = (cart?.items ?? []) as CartItem[];
   const chosen = shipping ?? addresses?.find((a) => a._id === selectedId) ?? addresses?.find((a) => a.isDefault) ?? addresses?.[0];
 
+  // Group cart lines by store so checkout, like the order, is organised per seller.
+  const groups = useMemo(() => {
+    const m = new Map<string, { storeName: string; items: CartItem[]; subtotal: number }>();
+    for (const it of items) {
+      const key = it.sellerId || it.storeName || 'store';
+      const g = m.get(key) ?? { storeName: it.storeName || 'Store', items: [], subtotal: 0 };
+      g.items.push(it);
+      g.subtotal += it.unitPrice * it.quantity;
+      m.set(key, g);
+    }
+    return [...m.values()];
+  }, [items]);
+
+  const subtotal = cart?.subtotal ?? 0;
+  const discount = cart?.discountAmount ?? 0;
+  const total = Math.max(0, subtotal - discount);
+
+  const PAYMENT_METHODS: { id: PaymentMethod; icon: LucideIcon; available: boolean }[] = [
+    { id: 'cod', icon: Banknote, available: true },
+    { id: 'card', icon: CreditCard, available: false },
+    { id: 'mpesa', icon: Smartphone, available: false },
+    { id: 'waafi', icon: Wallet, available: false },
+  ];
+
   if (cartLoading) return <Container className="py-16"><div className="skeleton h-64" /></Container>;
-  if (items.length === 0 && !order) {
+  if (items.length === 0) {
     return (
       <Container className="py-16">
         <EmptyState icon={<ShoppingBag className="h-12 w-12" />} title={t('emptyCart')} description={t('emptyCartText')}
@@ -58,20 +83,23 @@ function CheckoutView() {
     );
   }
 
-  const proceedToPayment = async () => {
+  const goReview = () => {
     if (!chosen) { toast.error(t('addAddressFirst')); return; }
+    setStep('review');
+  };
+
+  const placeOrder = async () => {
+    if (!chosen) { toast.error(t('addAddressFirst')); setStep('address'); return; }
+    if (payment !== 'cod') { toast.error(t('couldNotPlace')); return; }
     try {
-      const created = await createOrder({ shippingAddress: chosen, notes: notes || undefined }).unwrap();
-      setOrder(created);
-      const intent = await createIntent({ orderId: created._id }).unwrap();
-      setClientSecret(intent.clientSecret);
-      setStep('payment');
+      const created = await createOrder({ shippingAddress: chosen, notes: notes || undefined, paymentMethod: payment }).unwrap();
+      router.push(`/checkout/confirmation/${created._id}`);
     } catch {
-      toast.error(t('couldNotStart'));
+      toast.error(t('couldNotPlace'));
     }
   };
 
-  const summary = order ?? { subtotal: cart?.subtotal ?? 0, shippingCost: 0, taxAmount: 0, discountAmount: cart?.discountAmount ?? 0, total: (cart?.subtotal ?? 0) - (cart?.discountAmount ?? 0), currency: 'USD' };
+  const paymentLabel = (id: PaymentMethod) => t(id);
 
   return (
     <Container className="py-10">
@@ -80,7 +108,8 @@ function CheckoutView() {
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
         <div>
-          {step === 'address' ? (
+          {/* ── Step 1: Address ── */}
+          {step === 'address' && (
             <section className="rounded-2xl border border-line bg-surface p-6 shadow-card">
               <h2 className="mb-4 flex items-center gap-2 font-display text-xl font-bold"><MapPin className="h-5 w-5 text-brand" /> {t('shippingAddress')}</h2>
 
@@ -114,61 +143,164 @@ function CheckoutView() {
                 />
               )}
 
+              <Button size="lg" className="mt-6 w-full" disabled={!chosen} onClick={goReview}>
+                {t('continueToReview')}
+              </Button>
+            </section>
+          )}
+
+          {/* ── Step 2: Review items (grouped by store) ── */}
+          {step === 'review' && (
+            <section className="rounded-2xl border border-line bg-surface p-6 shadow-card">
+              <h2 className="mb-4 flex items-center gap-2 font-display text-xl font-bold"><ShoppingBag className="h-5 w-5 text-brand" /> {t('reviewTitle')}</h2>
+              <div className="space-y-5">
+                {groups.map((g, gi) => (
+                  <StoreGroup key={gi} storeName={g.storeName} subtotalLabel={t('subtotal')} subtotal={g.subtotal} soldByLabel={t('soldBy')}>
+                    {g.items.map((it) => (
+                      <LineItem key={it.variantSku} item={it} />
+                    ))}
+                  </StoreGroup>
+                ))}
+              </div>
+
               <div className="mt-6">
                 <label className="mb-1.5 block text-sm font-semibold">{t('orderNotes')}</label>
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder={t('notesPlaceholder')} className="focus-ring w-full rounded-xl border-2 border-line p-3 text-sm focus:border-brand" />
               </div>
 
-              <Button size="lg" className="mt-6 w-full" loading={creating} disabled={!chosen} onClick={proceedToPayment}>
-                {t('continueToPayment')}
-              </Button>
+              <div className="mt-6 flex items-center justify-between">
+                <button onClick={() => setStep('address')} className="text-sm font-semibold text-muted-fg hover:text-brand">{t('backToAddress')}</button>
+                <Button size="lg" onClick={() => setStep('payment')}>{t('continueToPayment')}</Button>
+              </div>
             </section>
-          ) : (
+          )}
+
+          {/* ── Step 3: Payment method ── */}
+          {step === 'payment' && (
             <section className="rounded-2xl border border-line bg-surface p-6 shadow-card">
-              <h2 className="mb-4 flex items-center gap-2 font-display text-xl font-bold"><CreditCard className="h-5 w-5 text-brand" /> {t('payment')}</h2>
-              {clientSecret && stripeConfigured ? (
-                <Elements stripe={getStripe()} options={{ clientSecret, appearance: { theme: 'flat', variables: { colorPrimary: '#7c3aed', borderRadius: '12px' } } }}>
-                  <PaymentForm orderId={order!._id} />
-                </Elements>
-              ) : (
-                <div className="rounded-xl bg-muted p-4 text-sm">
-                  <p className="font-semibold">{t('notConfigured')}</p>
-                  <p className="mt-1 text-muted-fg">{t('notConfiguredHint')} <strong>{order?.orderNumber}</strong></p>
-                  <Link href={`/checkout/confirmation/${order?._id}`} className="mt-3 inline-block"><Button variant="outline">{t('viewOrder')}</Button></Link>
+              <h2 className="mb-1 flex items-center gap-2 font-display text-xl font-bold"><CreditCard className="h-5 w-5 text-brand" /> {t('paymentMethodTitle')}</h2>
+              <p className="mb-4 text-sm text-muted-fg">{t('selectPayment')}</p>
+              <div className="space-y-3">
+                {PAYMENT_METHODS.map(({ id, icon: Icon, available }) => {
+                  const active = payment === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      disabled={!available}
+                      onClick={() => available && setPayment(id)}
+                      aria-pressed={active}
+                      className={cn(
+                        'flex w-full items-center gap-4 rounded-xl border-2 p-4 text-left transition',
+                        !available && 'cursor-not-allowed opacity-55',
+                        active ? 'border-brand bg-brand-50' : 'border-line hover:border-ink/20',
+                      )}
+                    >
+                      <span className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-full', active ? 'bg-brand text-white' : 'bg-muted text-ink')}>
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <span className="flex-1">
+                        <span className="flex items-center gap-2 font-bold">
+                          {paymentLabel(id)}
+                          {!available && <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-fg">{t('comingSoon')}</span>}
+                        </span>
+                        <span className="block text-sm text-muted-fg">{t(`${id}Desc`)}</span>
+                      </span>
+                      {active && <Check className="h-5 w-5 text-brand" />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 flex items-center justify-between">
+                <button onClick={() => setStep('review')} className="text-sm font-semibold text-muted-fg hover:text-brand">{t('backToReview')}</button>
+                <Button size="lg" disabled={!payment} onClick={() => setStep('place')}>{t('continueToPlace')}</Button>
+              </div>
+            </section>
+          )}
+
+          {/* ── Step 4: Place order (final review) ── */}
+          {step === 'place' && (
+            <section className="space-y-5">
+              <div className="rounded-2xl border border-line bg-surface p-6 shadow-card">
+                <div className="flex items-center justify-between">
+                  <h3 className="flex items-center gap-2 font-bold"><MapPin className="h-4 w-4 text-brand" /> {t('deliverTo')}</h3>
+                  <button onClick={() => setStep('address')} className="text-sm font-semibold text-brand hover:underline">{t('change')}</button>
                 </div>
-              )}
-              <button onClick={() => setStep('address')} className="mt-4 text-sm font-semibold text-muted-fg hover:text-brand">{t('backToAddress')}</button>
+                {chosen && (
+                  <div className="mt-2 text-sm text-muted-fg">
+                    <p className="font-semibold text-ink">{chosen.fullName}</p>
+                    <p>{chosen.line1}{chosen.line2 ? `, ${chosen.line2}` : ''}, {chosen.city} {chosen.postalCode}, {chosen.countryCode}</p>
+                    {chosen.phone && <p>{chosen.phone}</p>}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-line bg-surface p-6 shadow-card">
+                <div className="flex items-center justify-between">
+                  <h3 className="flex items-center gap-2 font-bold"><CreditCard className="h-4 w-4 text-brand" /> {t('paymentMethodTitle')}</h3>
+                  <button onClick={() => setStep('payment')} className="text-sm font-semibold text-brand hover:underline">{t('change')}</button>
+                </div>
+                <p className="mt-2 text-sm"><span className="font-semibold">{paymentLabel(payment)}</span> <span className="text-muted-fg">· {t('payOnDelivery')}</span></p>
+              </div>
+
+              <div className="rounded-2xl border border-line bg-surface p-6 shadow-card">
+                <h3 className="mb-4 flex items-center gap-2 font-bold"><ShoppingBag className="h-4 w-4 text-brand" /> {t('items')}</h3>
+                <div className="space-y-5">
+                  {groups.map((g, gi) => (
+                    <StoreGroup key={gi} storeName={g.storeName} subtotalLabel={t('subtotal')} subtotal={g.subtotal} soldByLabel={t('soldBy')}>
+                      {g.items.map((it) => <LineItem key={it.variantSku} item={it} />)}
+                    </StoreGroup>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <button onClick={() => setStep('payment')} className="text-sm font-semibold text-muted-fg hover:text-brand">{t('backToPayment')}</button>
+                <Button size="lg" className="gap-2" loading={placing} onClick={placeOrder}>
+                  <Check className="h-4 w-4" /> {t('placeOrder')}
+                </Button>
+              </div>
             </section>
           )}
         </div>
 
-        {/* Summary */}
+        {/* Summary (grouped by store) */}
         <aside className="space-y-4">
           <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
             <h3 className="mb-4 font-bold">{t('orderSummary')}</h3>
-            <ul className="space-y-3">
-              {items.map((it) => (
-                <li key={it.variantSku} className="flex gap-3">
-                  <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted">
-                    {it.imageUrl && <Image src={it.imageUrl} alt={it.productName} fill className="object-cover" sizes="56px" />}
-                    <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-ink px-1 text-[10px] font-bold text-white">{it.quantity}</span>
-                  </div>
-                  <div className="flex flex-1 justify-between gap-2 text-sm">
-                    <span className="line-clamp-2">{it.productName}</span>
-                    <span className="font-semibold">{formatPrice(it.unitPrice * it.quantity)}</span>
-                  </div>
-                </li>
+            <div className="space-y-4">
+              {groups.map((g, gi) => (
+                <div key={gi}>
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-fg">
+                    <Store className="h-3.5 w-3.5" /> {g.storeName}
+                  </p>
+                  <ul className="space-y-3">
+                    {g.items.map((it) => (
+                      <li key={it.variantSku} className="flex gap-3">
+                        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted">
+                          {it.imageUrl && <Image src={it.imageUrl} alt={it.productName} fill className="object-cover" sizes="56px" />}
+                          <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-ink px-1 text-[10px] font-bold text-white">{it.quantity}</span>
+                        </div>
+                        <div className="flex flex-1 justify-between gap-2 text-sm">
+                          <span className="line-clamp-2">{it.productName}</span>
+                          <span className="font-semibold">{formatPrice(it.unitPrice * it.quantity)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
             <div className="mt-4 space-y-2 border-t border-line pt-4 text-sm">
-              <Row label={t('subtotal')} value={formatPrice(summary.subtotal)} />
-              {summary.discountAmount > 0 && <Row label={t('discount')} value={`−${formatPrice(summary.discountAmount)}`} />}
-              <Row label={t('shipping')} value={summary.shippingCost ? formatPrice(summary.shippingCost) : t('free')} />
-              <Row label={t('tax')} value={formatPrice(summary.taxAmount)} />
+              <Row label={t('subtotal')} value={formatPrice(subtotal)} />
+              {discount > 0 && <Row label={t('discount')} value={`−${formatPrice(discount)}`} />}
+              <Row label={t('shipping')} value={t('free')} />
+              <Row label={t('tax')} value={formatPrice(0)} />
             </div>
             <div className="mt-3 flex justify-between border-t border-line pt-3 text-lg font-extrabold">
               <span>{t('total')}</span>
-              <span>{formatPrice(summary.total)}</span>
+              <span>{formatPrice(total)}</span>
             </div>
           </div>
           <p className="flex items-center justify-center gap-2 text-xs text-muted-fg"><Lock className="h-3.5 w-3.5" /> {t('secureSsl')}</p>
@@ -178,55 +310,53 @@ function CheckoutView() {
   );
 }
 
-function PaymentForm({ orderId }: { orderId: string }) {
-  const t = useTranslations('checkout');
-  const stripe = useStripe();
-  const elements = useElements();
-  const router = useRouter();
-  const [paying, setPaying] = useState(false);
-
-  const pay = async () => {
-    if (!stripe || !elements) return;
-    setPaying(true);
-    const { error, paymentIntent } = await stripe.confirmPayment({ elements, redirect: 'if_required' });
-    if (error) {
-      toast.error(error.message || t('paymentFailed'));
-      setPaying(false);
-      return;
-    }
-    if (paymentIntent && (paymentIntent.status === 'succeeded' || paymentIntent.status === 'processing')) {
-      toast.success(t('paymentSuccess'));
-      router.push(`/checkout/confirmation/${orderId}`);
-    } else {
-      setPaying(false);
-    }
-  };
-
+function StoreGroup({ storeName, soldByLabel, subtotalLabel, subtotal, children }: { storeName: string; soldByLabel: string; subtotalLabel: string; subtotal: number; children: React.ReactNode }) {
   return (
-    <div className="space-y-5">
-      <PaymentElement />
-      <Button size="lg" className="w-full gap-2" loading={paying} disabled={!stripe} onClick={pay}>
-        <Lock className="h-4 w-4" /> {t('payNow')}
-      </Button>
+    <div className="overflow-hidden rounded-xl border border-line">
+      <div className="flex items-center gap-2 border-b border-line bg-muted/50 px-4 py-2.5">
+        <Store className="h-4 w-4 text-brand" />
+        <span className="text-sm font-bold">{storeName}</span>
+        <span className="ml-auto text-xs text-muted-fg">{subtotalLabel}: <span className="font-semibold text-ink">{formatPrice(subtotal)}</span></span>
+      </div>
+      <div className="divide-y divide-line">{children}</div>
     </div>
   );
 }
 
-function Steps({ step }: { step: 'address' | 'payment' }) {
-  const t = useTranslations('checkout');
-  const steps = [{ key: 'address' as const }, { key: 'payment' as const }];
+function LineItem({ item }: { item: CartItem }) {
   return (
-    <div className="flex items-center gap-3 text-sm font-bold">
-      {steps.map((s, i) => {
-        const active = s.key === step;
-        const done = step === 'payment' && s.key === 'address';
+    <div className="flex items-center gap-3 px-4 py-3">
+      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-muted">
+        {item.imageUrl && <Image src={item.imageUrl} alt={item.productName} fill className="object-cover" sizes="64px" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="line-clamp-2 text-sm font-semibold">{item.productName}</p>
+        {item.variantName && <p className="text-xs text-muted-fg">{item.variantName}</p>}
+        <p className="text-xs text-muted-fg">× {item.quantity}</p>
+      </div>
+      <span className="shrink-0 text-sm font-bold">{formatPrice(item.unitPrice * item.quantity)}</span>
+    </div>
+  );
+}
+
+function Steps({ step }: { step: Step }) {
+  const t = useTranslations('checkout');
+  const labels: Record<Step, string> = {
+    address: t('stepAddress'), review: t('stepReview'), payment: t('stepPayment'), place: t('stepPlace'),
+  };
+  const currentIdx = STEP_ORDER.indexOf(step);
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm font-bold sm:gap-3">
+      {STEP_ORDER.map((s, i) => {
+        const active = i === currentIdx;
+        const done = i < currentIdx;
         return (
-          <div key={s.key} className="flex items-center gap-3">
+          <div key={s} className="flex items-center gap-2 sm:gap-3">
             <span className={cn('grid h-7 w-7 place-items-center rounded-full', active ? 'bg-brand-gradient text-white' : done ? 'bg-success text-white' : 'bg-muted text-muted-fg')}>
               {done ? <Check className="h-4 w-4" /> : i + 1}
             </span>
-            <span className={active ? 'text-ink' : 'text-muted-fg'}>{s.key === 'address' ? t('stepAddress') : t('stepPayment')}</span>
-            {i === 0 && <span className="h-px w-8 bg-line" />}
+            <span className={active ? 'text-ink' : 'text-muted-fg'}>{labels[s]}</span>
+            {i < STEP_ORDER.length - 1 && <ChevronRight className="h-4 w-4 text-line" />}
           </div>
         );
       })}

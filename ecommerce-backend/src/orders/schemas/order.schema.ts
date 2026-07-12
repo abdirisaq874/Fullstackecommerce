@@ -14,6 +14,9 @@ export class OrderItem {
   @Prop({ required: true }) quantity: number;
   @Prop({ required: true }) unitPrice: number;
   @Prop({ required: true }) totalPrice: number;
+  // Seller snapshot — lets orders be grouped/split by store without a join.
+  @Prop({ type: Types.ObjectId, ref: 'User' }) sellerId?: Types.ObjectId;
+  @Prop() storeName?: string;
 }
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
 
@@ -38,6 +41,12 @@ export class Order {
   @Prop({ type: Number, default: 0 }) discountAmount: number;
   @Prop({ type: Number }) total: number;
   @Prop({ default: 'USD' }) currency: string;
+
+  // How the buyer pays. Only 'cod' (cash/pay-on-delivery) is live; card (Stripe),
+  // mpesa (Kenya) and waafi (Somalia) are planned. `paymentStatus` tracks
+  // settlement — COD stays 'pending' until collected on delivery.
+  @Prop({ enum: ['card', 'mpesa', 'waafi', 'cod'], default: 'cod' }) paymentMethod: string;
+  @Prop({ enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' }) paymentStatus: string;
 
   @Prop({ type: Types.ObjectId }) couponId?: Types.ObjectId;
   @Prop() notes?: string;

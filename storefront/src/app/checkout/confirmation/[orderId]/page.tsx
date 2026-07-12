@@ -1,11 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { CheckCircle2, Package, ArrowRight } from 'lucide-react';
+import { CheckCircle2, Package, ArrowRight, Store, Banknote } from 'lucide-react';
 import { formatPrice } from '@/lib/utils';
 import { Button, Container, Badge } from '@/components/ui';
 import { RequireAuth } from '@/components/auth/RequireAuth';
 import { useGetOrderQuery } from '@/store/api/ordersApi';
+import type { OrderItem, PaymentMethod } from '@/types';
+
+const PAY_LABEL: Record<PaymentMethod, string> = {
+  cod: 'Cash on delivery', card: 'Credit / debit card', mpesa: 'M-Pesa', waafi: 'Waafi',
+};
 
 export default function ConfirmationPage({ params }: { params: { orderId: string } }) {
   return (
@@ -27,6 +32,19 @@ function Confirmation({ orderId }: { orderId: string }) {
       </Container>
     );
 
+  // Group items by store so the receipt mirrors the checkout organisation.
+  const groups = (() => {
+    const m = new Map<string, { storeName: string; items: OrderItem[] }>();
+    for (const it of order.items as OrderItem[]) {
+      const key = (it.sellerId as string) || it.storeName || 'store';
+      const g = m.get(key) ?? { storeName: it.storeName || 'Store', items: [] };
+      g.items.push(it);
+      m.set(key, g);
+    }
+    return [...m.values()];
+  })();
+  const payMethod = (order.paymentMethod && PAY_LABEL[order.paymentMethod]) || undefined;
+
   return (
     <Container className="py-12">
       <div className="mx-auto max-w-2xl">
@@ -41,14 +59,24 @@ function Confirmation({ orderId }: { orderId: string }) {
             <h2 className="font-display text-lg font-bold">Order details</h2>
             <Badge variant="brand" className="capitalize">{order.status}</Badge>
           </div>
-          <ul className="divide-y divide-line">
-            {order.items.map((it) => (
-              <li key={it.variantSku} className="flex justify-between gap-3 py-3 text-sm">
-                <span>{it.productName} <span className="text-muted-fg">× {it.quantity}</span></span>
-                <span className="font-semibold">{formatPrice(it.totalPrice)}</span>
-              </li>
+          <div className="space-y-4">
+            {groups.map((g, gi) => (
+              <div key={gi} className="overflow-hidden rounded-xl border border-line">
+                <div className="flex items-center gap-2 border-b border-line bg-muted/50 px-4 py-2.5">
+                  <Store className="h-4 w-4 text-brand" />
+                  <span className="text-sm font-bold">{g.storeName}</span>
+                </div>
+                <ul className="divide-y divide-line px-4">
+                  {g.items.map((it) => (
+                    <li key={it.variantSku} className="flex justify-between gap-3 py-3 text-sm">
+                      <span>{it.productName} <span className="text-muted-fg">× {it.quantity}</span></span>
+                      <span className="font-semibold">{formatPrice(it.totalPrice)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
           <div className="mt-4 space-y-1 border-t border-line pt-4 text-sm">
             <Row label="Subtotal" value={formatPrice(order.subtotal)} />
             {order.discountAmount > 0 && <Row label="Discount" value={`−${formatPrice(order.discountAmount)}`} />}
@@ -57,7 +85,17 @@ function Confirmation({ orderId }: { orderId: string }) {
             <div className="flex justify-between pt-2 text-base font-extrabold"><span>Total</span><span>{formatPrice(order.total)}</span></div>
           </div>
 
-          <div className="mt-6 rounded-xl bg-muted/50 p-4 text-sm">
+          {payMethod && (
+            <div className="mt-6 flex items-center gap-3 rounded-xl bg-muted/50 p-4 text-sm">
+              <Banknote className="h-5 w-5 text-brand" />
+              <div>
+                <p className="font-semibold">{payMethod}</p>
+                {order.paymentMethod === 'cod' && <p className="text-muted-fg">Pay in cash when your order is delivered</p>}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 rounded-xl bg-muted/50 p-4 text-sm">
             <p className="font-semibold">Shipping to</p>
             <p className="text-muted-fg">{order.shippingAddress.fullName}, {order.shippingAddress.line1}, {order.shippingAddress.city} {order.shippingAddress.postalCode}, {order.shippingAddress.countryCode}</p>
           </div>

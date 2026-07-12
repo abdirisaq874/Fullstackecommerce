@@ -159,6 +159,8 @@ export interface CartItem {
   slug?: string;
   quantity: number;
   unitPrice: number;
+  sellerId?: string;
+  storeName?: string;
 }
 export interface Cart {
   items: CartItem[];
@@ -185,7 +187,11 @@ export interface OrderItem {
   unitPrice: number;
   totalPrice: number;
   imageUrl?: string;
+  sellerId?: string;
+  storeName?: string;
 }
+
+export type PaymentMethod = 'card' | 'mpesa' | 'waafi' | 'cod';
 export interface Order {
   _id: string;
   orderNumber: string;
@@ -200,6 +206,8 @@ export interface Order {
   discountAmount: number;
   total: number;
   currency: string;
+  paymentMethod?: PaymentMethod;
+  paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded';
   notes?: string;
   placedAt?: string;
   confirmedAt?: string;

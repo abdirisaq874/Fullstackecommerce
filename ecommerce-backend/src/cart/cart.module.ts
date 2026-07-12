@@ -4,6 +4,7 @@ import { CartController } from './cart.controller';
 import { CartService } from './cart.service';
 import { Cart, CartSchema } from './schemas/cart.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
+import { SellerSettings, SellerSettingsSchema } from '../seller-settings/schemas/seller-settings.schema';
 import { InventoryModule } from '../inventory/inventory.module';
 import { CouponModule } from '../coupons/coupon.module';
 
@@ -12,6 +13,7 @@ import { CouponModule } from '../coupons/coupon.module';
     MongooseModule.forFeature([
       { name: Cart.name, schema: CartSchema },
       { name: Product.name, schema: ProductSchema },
+      { name: SellerSettings.name, schema: SellerSettingsSchema },
     ]),
     InventoryModule,
     CouponModule,

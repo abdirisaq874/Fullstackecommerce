@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Cart, CartDocument } from './schemas/cart.schema';
 import { Product } from '../products/schemas/product.schema';
+import { SellerSettings } from '../seller-settings/schemas/seller-settings.schema';
 import { InventoryService } from '../inventory/inventory.service';
 import { RedisService } from '../shared/database/redis.service';
 import { roundMoney } from '../shared/utils/helpers';
@@ -16,6 +17,7 @@ export class CartService {
   constructor(
     @InjectModel(Cart.name) private cartModel: Model<Cart>,
     @InjectModel(Product.name) private productModel: Model<Product>,
+    @InjectModel(SellerSettings.name) private sellerSettingsModel: Model<SellerSettings>,
     private inventoryService: InventoryService,
     private redis: RedisService,
     private config: ConfigService,
@@ -223,8 +225,39 @@ export class CartService {
       }
     }
 
+    // Enrich each line with its seller + store name so the storefront can group
+    // the cart/checkout by store. Two batched lookups (products → sellerId,
+    // sellers → displayName), no N+1.
+    const productIds = [...new Set(cart.items.map((i) => i.productId.toString()))];
+    const products = await this.productModel
+      .find({ _id: { $in: productIds.map((id) => new Types.ObjectId(id)) } })
+      .select('sellerId')
+      .lean();
+    const sellerByProduct = new Map(
+      products.map((p: any) => [p._id.toString(), p.sellerId ? p.sellerId.toString() : undefined]),
+    );
+    const sellerIds = [...new Set([...sellerByProduct.values()].filter(Boolean) as string[])];
+    const settings = sellerIds.length
+      ? await this.sellerSettingsModel
+          .find({ sellerId: { $in: sellerIds.map((id) => new Types.ObjectId(id)) } })
+          .select('sellerId storeProfile.displayName')
+          .lean()
+      : [];
+    const nameBySeller = new Map(
+      settings.map((s: any) => [s.sellerId?.toString(), s.storeProfile?.displayName]),
+    );
+    const items = cart.items.map((item) => {
+      const plain = (item as any).toObject ? (item as any).toObject() : item;
+      const sellerId = sellerByProduct.get(item.productId.toString());
+      return {
+        ...plain,
+        sellerId,
+        storeName: (sellerId && nameBySeller.get(sellerId)) || 'Store',
+      };
+    });
+
     return {
-      items: cart.items,
+      items,
       subtotal,
       itemCount: cart.items.reduce((sum, item) => sum + item.quantity, 0),
       couponCode,

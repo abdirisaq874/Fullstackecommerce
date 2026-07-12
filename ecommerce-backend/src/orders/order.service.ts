@@ -35,15 +35,24 @@ export class OrderService {
     shippingAddress: Record<string, any>,
     billingAddress?: Record<string, any>,
     notes?: string,
+    paymentMethod = 'cod',
   ): Promise<OrderDocument> {
+    // Only cash/pay-on-delivery is live today; card (Stripe), M-Pesa and Waafi
+    // are planned. Reject the others server-side so a UI bug can't place an
+    // unpayable order.
+    if (paymentMethod !== 'cod') {
+      throw new BadRequestException('This payment method is not available yet');
+    }
+
     const cartSummary = await this.cartService.getCartSummary(userId);
 
     if (!cartSummary.items || cartSummary.items.length === 0) {
       throw new BadRequestException('Cart is empty');
     }
 
-    // Build order items from cart (snapshot everything)
-    const orderItems = cartSummary.items.map((item) => ({
+    // Build order items from cart (snapshot everything, incl. the seller so the
+    // order can be grouped/shown per store without a later join).
+    const orderItems = cartSummary.items.map((item: any) => ({
       productId: item.productId,
       variantSku: item.variantSku,
       productName: item.productName,
@@ -53,6 +62,8 @@ export class OrderService {
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: roundMoney(item.unitPrice * item.quantity),
+      sellerId: item.sellerId ? new Types.ObjectId(String(item.sellerId)) : undefined,
+      storeName: item.storeName,
     }));
 
     const subtotal = roundMoney(
@@ -72,7 +83,11 @@ export class OrderService {
           {
             orderNumber: generateOrderNumber(),
             userId: new Types.ObjectId(userId),
-            status: 'pending',
+            // COD needs no payment gate, so it's confirmed on placement; payment
+            // itself stays pending until collected on delivery.
+            status: 'confirmed',
+            paymentMethod,
+            paymentStatus: 'pending',
             items: orderItems,
             shippingAddress,
             billingAddress: billingAddress || shippingAddress,
@@ -83,6 +98,7 @@ export class OrderService {
             currency: 'USD',
             notes,
             placedAt: new Date(),
+            confirmedAt: new Date(),
           },
         ],
         { session },

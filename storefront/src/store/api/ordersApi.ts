@@ -1,11 +1,12 @@
 import { apiSlice } from './apiSlice';
 import { toQuery } from '@/lib/utils';
-import type { Address, Order, Paginated } from '@/types';
+import type { Address, Order, Paginated, PaymentMethod } from '@/types';
 
 interface CreateOrderBody {
   shippingAddress: Address;
   billingAddress?: Address;
   notes?: string;
+  paymentMethod?: PaymentMethod;
 }
 
 export const ordersApi = apiSlice.injectEndpoints({
