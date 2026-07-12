@@ -65,6 +65,7 @@ export class FacetsService {
 
   private buildAggs(category: { facets?: CategoryFacet[] } | null): Record<string, any> {
     const aggs: Record<string, any> = {
+      categories: { terms: { field: 'categorySlug', size: 30 } },
       brands: { terms: { field: 'brandSlug', size: 20 } },
       price: { stats: { field: 'basePrice' } },
       ratings: { range: { field: 'avgRating', ranges: [{ from: 4 }, { from: 3 }, { from: 2 }] } },
@@ -106,6 +107,15 @@ export class FacetsService {
   ): Facet[] {
     const out: Facet[] = [];
     if (!aggs) return out;
+
+    if (aggs.categories?.buckets?.length) {
+      out.push({
+        key: 'category',
+        type: 'terms',
+        label: 'Category',
+        options: aggs.categories.buckets.map((b: any) => ({ value: b.key, count: b.doc_count })),
+      });
+    }
 
     if (aggs.brands?.buckets?.length) {
       out.push({

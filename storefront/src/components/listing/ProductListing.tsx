@@ -93,7 +93,11 @@ export function ProductListing({
   const KNOWN_FACETS = ['brand', 'price', 'rating', 'category'];
   const attrFacets = facets.filter((f) => !KNOWN_FACETS.includes(f.key) && (f.options?.length ?? 0) > 0);
   const ratingCounts = new Map((facets.find((f) => f.key === 'rating')?.options ?? []).map((o) => [o.value, o.count]));
-  const brandCounts = new Map((facets.find((f) => f.key === 'brand')?.options ?? []).map((o) => [o.value, o.count]));
+  const catFacet = facets.find((f) => f.key === 'category');
+  const brandFacet = facets.find((f) => f.key === 'brand');
+  // slug → display name (from the reference tree/list) for dynamic facet options
+  const catNameBySlug = new Map((categories ?? []).map((c) => [c.slug, c.name]));
+  const brandNameBySlug = new Map((brands ?? []).map((b) => [b.slug, b.name]));
 
   const total = useFallback ? (fallback.data?.meta.total ?? 0) : (smart.data?.meta.total ?? 0);
   const totalPages = useFallback ? (fallback.data?.meta.totalPages ?? 1) : (smart.data?.meta.totalPages ?? 1);
@@ -125,28 +129,40 @@ export function ProductListing({
 
   const Filters = (
     <div className="space-y-7">
-      {!fixedCategory && (categories?.length ?? 0) > 0 && (
+      {/* Category — dynamic (only categories present in the results, with
+          counts); falls back to the full tree when the search API is down. */}
+      {!fixedCategory && ((catFacet?.options?.length ?? 0) > 0 || (categories?.length ?? 0) > 0) && (
         <FilterGroup title="Category">
           <div className="space-y-1">
-            {(categories ?? []).slice(0, 12).map((c) => (
-              <FilterOption key={c._id} active={category === c.slug} onClick={() => setParam({ category: category === c.slug ? undefined : c.slug })}>
-                {c.name}
-              </FilterOption>
-            ))}
+            {(catFacet?.options?.length ?? 0) > 0
+              ? (catFacet!.options ?? []).map((o) => (
+                  <FilterOption key={o.value} active={category === o.value} onClick={() => setParam({ category: category === o.value ? undefined : o.value })}>
+                    {(catNameBySlug.get(o.value) || o.value)} ({o.count})
+                  </FilterOption>
+                ))
+              : (categories ?? []).slice(0, 12).map((c) => (
+                  <FilterOption key={c._id} active={category === c.slug} onClick={() => setParam({ category: category === c.slug ? undefined : c.slug })}>
+                    {c.name}
+                  </FilterOption>
+                ))}
           </div>
         </FilterGroup>
       )}
-      {!fixedBrand && (brands?.length ?? 0) > 0 && (
+      {/* Brand — show only brands present in the results when we have facet data */}
+      {!fixedBrand && ((brandFacet?.options?.length ?? 0) > 0 || (brands?.length ?? 0) > 0) && (
         <FilterGroup title="Brand">
           <div className="space-y-1">
-            {(brands ?? []).slice(0, 12).map((b) => {
-              const count = brandCounts.get(b.slug);
-              return (
-                <FilterOption key={b._id} active={brand === b.slug} onClick={() => setParam({ brand: brand === b.slug ? undefined : b.slug })}>
-                  {b.name}{count ? ` (${count})` : ''}
-                </FilterOption>
-              );
-            })}
+            {(brandFacet?.options?.length ?? 0) > 0
+              ? (brandFacet!.options ?? []).map((o) => (
+                  <FilterOption key={o.value} active={brand === o.value} onClick={() => setParam({ brand: brand === o.value ? undefined : o.value })}>
+                    {(brandNameBySlug.get(o.value) || o.value)} ({o.count})
+                  </FilterOption>
+                ))
+              : (brands ?? []).slice(0, 12).map((b) => (
+                  <FilterOption key={b._id} active={brand === b.slug} onClick={() => setParam({ brand: brand === b.slug ? undefined : b.slug })}>
+                    {b.name}
+                  </FilterOption>
+                ))}
           </div>
         </FilterGroup>
       )}
