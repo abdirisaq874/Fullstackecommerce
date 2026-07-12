@@ -83,6 +83,7 @@ export function brandName(id?: string): string {
 }
 
 export function countryFlag(dest: string): string {
+  if (!dest) return '';
   if (dest.includes('SO')) return '🇸🇴';
   if (dest.includes('KE')) return '🇰🇪';
   if (dest.includes('ET')) return '🇪🇹';

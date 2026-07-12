@@ -75,7 +75,7 @@ export default function OrdersPage() {
   };
 
   const columns: ResponsiveColumn<Order>[] = [
-    { key: 'id', header: 'Order', mobileHidden: true, render: (o) => <span className="font-mono text-xs font-medium text-stone-900">{o.id}</span> },
+    { key: 'id', header: 'Order', mobileHidden: true, render: (o) => <span className="font-mono text-xs font-medium text-stone-900">{o.orderNumber || o.id}</span> },
     {
       key: 'customer', header: 'Customer',
       mobilePrimary: true,
@@ -85,7 +85,7 @@ export default function OrdersPage() {
           <div className="text-xs text-stone-500 flex items-center gap-1">
             <CountryFlag destination={o.destination} /> {o.destination}
           </div>
-          <div className="md:hidden text-2xs font-mono text-stone-400 mt-0.5">{o.id}</div>
+          <div className="md:hidden text-2xs font-mono text-stone-400 mt-0.5">{o.orderNumber || o.id}</div>
         </div>
       ),
     },

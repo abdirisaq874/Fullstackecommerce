@@ -30,6 +30,53 @@ interface ListOrdersParams {
   status?: OrderStatus;
 }
 
+// The backend order shape (_id, orderNumber, items[], shippingAddress, …) is not
+// the flat shape the portal UI renders (id, customer, destination, items count,
+// date, …). Map it here so every screen gets consistent, non-undefined fields —
+// otherwise helpers like countryFlag(o.destination) crash on undefined.
+const KNOWN_STATUSES: OrderStatus[] = [
+  'new', 'confirmed', 'processing', 'picked', 'packed', 'shipped', 'delivered', 'cancelled', 'refunded',
+];
+function mapStatus(s?: string): OrderStatus {
+  if (s === 'pending') return 'new';
+  return KNOWN_STATUSES.includes(s as OrderStatus) ? (s as OrderStatus) : 'new';
+}
+function mapOrder(raw: any): Order {
+  const addr = raw?.shippingAddress ?? {};
+  const items: any[] = Array.isArray(raw?.items) ? raw.items : [];
+  const iso: string = raw?.placedAt || raw?.createdAt || '';
+  return {
+    id: String(raw?._id ?? raw?.id ?? ''),
+    orderNumber: raw?.orderNumber ?? '',
+    customer: addr.fullName || '—',
+    customerEmail: raw?.customerEmail ?? '',
+    customerPhone: addr.phone ?? '',
+    destination: [addr.city, addr.countryCode].filter(Boolean).join(', ') || (addr.countryCode ?? ''),
+    destinationFull: [addr.line1, addr.line2, addr.city, addr.state, addr.postalCode, addr.countryCode].filter(Boolean).join(', '),
+    total: raw?.total ?? 0,
+    subtotal: raw?.subtotal ?? 0,
+    shipping: raw?.shippingCost ?? 0,
+    tax: raw?.taxAmount ?? 0,
+    items: items.length,
+    status: mapStatus(raw?.status),
+    date: iso ? new Date(iso).toLocaleDateString() : '',
+    placedAt: iso,
+    paymentMethod: raw?.paymentMethod ?? '',
+    carrier: raw?.carrier ?? '',
+    trackingNumber: raw?.trackingNumber ?? '',
+    itemsList: items.map((it) => ({
+      productId: String(it?.productId ?? ''),
+      name: it?.productName ?? it?.variantName ?? '',
+      sku: it?.sku ?? it?.variantSku ?? '',
+      quantity: it?.quantity ?? 0,
+      price: it?.unitPrice ?? 0,
+      initial: String(it?.productName ?? '?').charAt(0).toUpperCase(),
+      imageUrl: it?.imageUrl,
+    })),
+    timeline: [],
+  };
+}
+
 export const ordersApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     listOrders: builder.query<Order[], ListOrdersParams | void>({
@@ -47,14 +94,15 @@ export const ordersApi = baseApi.injectEndpoints({
         // Backend `/orders` paginates: TransformInterceptor envelope wraps an
         // inner `{ data: [...], meta }`. Pull `.data` off the inner shape.
         const unwrapped = unwrapEnvelope<{ data: Order[] } | Order[]>(r);
-        if (
+        const rows =
           unwrapped &&
           typeof unwrapped === 'object' &&
           Array.isArray((unwrapped as { data?: unknown }).data)
-        ) {
-          return (unwrapped as { data: Order[] }).data;
-        }
-        return Array.isArray(unwrapped) ? unwrapped : [];
+            ? (unwrapped as { data: any[] }).data
+            : Array.isArray(unwrapped)
+              ? (unwrapped as any[])
+              : [];
+        return rows.map(mapOrder);
       },
       providesTags: (result) =>
         Array.isArray(result)
@@ -67,8 +115,10 @@ export const ordersApi = baseApi.injectEndpoints({
         url: `/orders/${id}`,
         method: 'GET',
       }),
-      transformResponse: (r: ResponseEnvelope<Order> | Order) =>
-        unwrapEnvelope<Order>(r),
+      transformResponse: (r: ResponseEnvelope<Order> | Order) => {
+        const raw = unwrapEnvelope<any>(r);
+        return raw ? mapOrder(raw) : undefined;
+      },
       providesTags: (_, __, id) => [{ type: 'Order', id }],
     }),
 
