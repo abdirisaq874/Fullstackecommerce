@@ -16,6 +16,7 @@ import { CsvImportModal } from '@/components/product/csv-import-modal';
 import { ConfirmDialog } from '@/components/primitives/confirm-dialog';
 import { Money } from '@/components/shared/format';
 import { useListProductsQuery, useBulkUpdateProductsMutation, useArchiveProductMutation, useBulkCreateProductsMutation, useGetCategoriesQuery, useGetBrandsQuery } from '@/lib/api';
+import { useAppSelector } from '@/lib/api/store';
 import { useToast } from '@/lib/hooks/use-toast';
 import { productDisplayStatus, toCSV, downloadCSV } from '@/lib/utils';
 import { CATEGORIES } from '@/lib/config/reference-data';
@@ -24,18 +25,21 @@ import clsx from 'clsx';
 
 export default function ProductsPage() {
   const router = useRouter();
+  // Scope the list to the signed-in seller — GET /products is the shared public
+  // catalog, so without a sellerId it returns every store's products.
+  const sellerId = useAppSelector((s) => s.auth.user?._id);
   // The backend's GET /products returns a single status per call (no "all" mode),
   // so we fetch each status and merge — this powers the All/Active/Drafts/Archived
   // tabs and their counts. (Mongo returns `_id`; map it to the `id` the UI expects.)
-  const activeQ = useListProductsQuery({ status: 'active', limit: 100 });
-  const draftQ = useListProductsQuery({ status: 'draft', limit: 100 });
-  const archivedQ = useListProductsQuery({ status: 'archived', limit: 100 });
+  const activeQ = useListProductsQuery({ status: 'active', limit: 100, sellerId }, { skip: !sellerId });
+  const draftQ = useListProductsQuery({ status: 'draft', limit: 100, sellerId }, { skip: !sellerId });
+  const archivedQ = useListProductsQuery({ status: 'archived', limit: 100, sellerId }, { skip: !sellerId });
   const products = useMemo<Product[]>(() => {
     const withId = (arr?: Product[]) =>
       (arr ?? []).map(p => ({ ...p, id: p.id ?? (p as unknown as { _id?: string })._id ?? '' }));
     return [...withId(activeQ.data), ...withId(draftQ.data), ...withId(archivedQ.data)];
   }, [activeQ.data, draftQ.data, archivedQ.data]);
-  const isLoading = activeQ.isLoading || draftQ.isLoading || archivedQ.isLoading;
+  const isLoading = !sellerId || activeQ.isLoading || draftQ.isLoading || archivedQ.isLoading;
   // Only show the error screen if EVERY query failed — one failed status must not
   // blank the whole page (it shows whatever did load).
   const isError = activeQ.isError && draftQ.isError && archivedQ.isError;

@@ -9,13 +9,16 @@ import { Button } from '@/components/primitives/button';
 import { Badge } from '@/components/primitives/badge';
 import { Money } from '@/components/shared/format';
 import { useListOrdersQuery, useListProductsQuery } from '@/lib/api';
+import { useAppSelector } from '@/lib/api/store';
 import { catName, countryFlag, formatCurrency } from '@/lib/utils';
 import clsx from 'clsx';
 
 export default function FinanceReportsPage() {
   const router = useRouter();
+  const sellerId = useAppSelector((s) => s.auth.user?._id);
   const { data: orders = [] } = useListOrdersQuery();
-  const { data: products = [] } = useListProductsQuery();
+  // Scope to the signed-in seller — GET /products is the shared public catalog.
+  const { data: products = [] } = useListProductsQuery({ sellerId }, { skip: !sellerId });
 
   // ─── Revenue by country ───
   const byCountry = useMemo(() => {
