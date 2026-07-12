@@ -105,11 +105,15 @@ async function main() {
       .filter((c) => c.name);
     const sizes = String(r[cSize] || '').split('|').map((s) => s.trim()).filter(Boolean);
 
-    // Product gallery = all colour images + CDNImages, deduped
+    // Product gallery = colour images (tagged with the colour in altText so the
+    // storefront can switch per selected colour) + generic CDNImages, deduped.
     const cdn = String(r[cImg] || '').split(/[\s|;,]+/).map((u) => u.trim()).filter((u) => /^https?:\/\//.test(u));
-    let imgUrls = Array.from(new Set([...colors.flatMap((c) => c.images), ...cdn])).slice(0, 12);
-    if (!imgUrls.length) imgUrls = [`https://picsum.photos/seed/${slug}/800/800`];
-    const images = imgUrls.map((url, idx) => ({ url, isPrimary: idx === 0, sortOrder: idx }));
+    const seenImg = new Set<string>();
+    const imgList: { url: string; altText?: string }[] = [];
+    for (const c of colors) for (const u of c.images) { if (!seenImg.has(u)) { seenImg.add(u); imgList.push({ url: u, altText: c.name }); } }
+    for (const u of cdn) { if (!seenImg.has(u)) { seenImg.add(u); imgList.push({ url: u }); } }
+    if (!imgList.length) imgList.push({ url: `https://picsum.photos/seed/${slug}/800/800` });
+    const images = imgList.slice(0, 16).map((im, idx) => ({ ...im, isPrimary: idx === 0, sortOrder: idx }));
 
     // Variants = Colour × Size (whichever dimensions the product has)
     const colorNames = colors.map((c) => c.name);

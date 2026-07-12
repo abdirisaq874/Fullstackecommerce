@@ -76,6 +76,9 @@ export function ProductDetail({ slug }: { slug: string }) {
     }
   }, [product]);
 
+  // Reset the gallery to the first image whenever the selected colour changes.
+  useEffect(() => { setActiveImg(0); }, [selected.Color]);
+
   // Record the view for "Recently viewed" + personalized "For you".
   useEffect(() => {
     if (!product) return;
@@ -109,7 +112,11 @@ export function ProductDetail({ slug }: { slug: string }) {
       </Container>
     );
 
-  const images = [...(product.images ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const allImages = [...(product.images ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  // When images are tagged with a colour (altText), show only the selected
+  // colour's images; otherwise fall back to the full gallery.
+  const colorImages = selected.Color ? allImages.filter((im) => im.altText === selected.Color) : [];
+  const images = colorImages.length ? colorImages : allImages;
   const mainImg = images[activeImg]?.url || images[0]?.url || PLACEHOLDER;
   const price = selectedVariant?.priceOverride ?? product.basePrice;
   const displayName = localizedText(product.localizations, locale, 'name', product.name);

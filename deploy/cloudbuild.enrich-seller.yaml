@@ -21,4 +21,4 @@ substitutions:
   _CONC: '2'
 options:
   logging: CLOUD_LOGGING_ONLY
-timeout: '3000s'
+timeout: '7200s'
