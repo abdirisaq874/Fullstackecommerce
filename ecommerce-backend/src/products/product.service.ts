@@ -78,7 +78,7 @@ export class ProductService {
    * accept both on the single public route. Active-only — drafts/archived are not
    * exposed publicly (an ownership-checked admin by-id endpoint is the next step).
    */
-  async findByIdOrSlug(idOrSlug: string): Promise<ProductDocument> {
+  async findByIdOrSlug(idOrSlug: string): Promise<any> {
     const filter = Types.ObjectId.isValid(idOrSlug)
       ? { _id: new Types.ObjectId(idOrSlug) }
       : { slug: idOrSlug };
@@ -89,7 +89,28 @@ export class ProductService {
       .populate('brandId', 'name slug logoUrl');
 
     if (!product) throw new NotFoundException('Product not found');
-    return product;
+
+    // Category breadcrumb trail (root→leaf). The category's `path` is a dot-
+    // separated slug chain (e.g. "apparel-and-accessories.shoes"); resolve every
+    // slug to its display name in one query so the storefront can render the
+    // full hierarchy without fetching the whole (5k+ node) taxonomy.
+    const cat = product.categoryId as any;
+    let categoryTrail: { name: string; slug: string }[] = [];
+    if (cat?.path) {
+      const slugs = String(cat.path).split('.').filter(Boolean);
+      const cats = await this.categoryModel
+        .find({ slug: { $in: slugs } })
+        .select('name slug')
+        .lean();
+      const nameBySlug = new Map(cats.map((c: any) => [c.slug, c.name]));
+      categoryTrail = slugs
+        .filter((s) => nameBySlug.has(s))
+        .map((s) => ({ name: nameBySlug.get(s) as string, slug: s }));
+    }
+
+    const result = product.toJSON() as any;
+    result.categoryTrail = categoryTrail;
+    return result;
   }
 
   async search(query: ProductQueryDto): Promise<PaginatedResponseDto<ProductDocument>> {

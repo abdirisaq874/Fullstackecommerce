@@ -85,6 +85,8 @@ export interface Product {
   reviewCount?: number;
   totalSold?: number;
   categoryId?: string | Category;
+  /** Category breadcrumb trail (root→leaf), resolved by the product-detail API. */
+  categoryTrail?: { name: string; slug: string }[];
   brandId?: string | Brand;
   variants?: ProductVariant[];
   images?: ProductImage[];

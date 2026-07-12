@@ -48,6 +48,7 @@ export function ProductDetail({ slug }: { slug: string }) {
   const [qty, setQty] = useState(1);
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [tab, setTab] = useState<'description' | 'specs' | 'reviews'>('description');
+  const [showAllCrumbs, setShowAllCrumbs] = useState(false);
 
   const optionGroups = useMemo(() => {
     const groups: Record<string, string[]> = {};
@@ -126,6 +127,28 @@ export function ProductDetail({ slug }: { slug: string }) {
   const categoryObj = typeof category === 'object' ? category : undefined;
   const sellerId = (product as any).sellerId as string | undefined;
 
+  // Breadcrumb trail (root→leaf). Prefer the API-resolved trail; fall back to
+  // the single populated category. Deep trails collapse their middle behind an
+  // expandable ellipsis so the bar never overflows.
+  type CrumbItem =
+    | { kind: 'crumb'; name: string; slug: string }
+    | { kind: 'ellipsis'; hidden: string };
+  const categoryTrail =
+    product.categoryTrail && product.categoryTrail.length
+      ? product.categoryTrail
+      : categoryObj
+        ? [{ name: categoryObj.name, slug: categoryObj.slug }]
+        : [];
+  const collapseCrumbs = categoryTrail.length > 4 && !showAllCrumbs;
+  const hiddenCrumbs = collapseCrumbs ? categoryTrail.slice(1, -2) : [];
+  const crumbItems: CrumbItem[] = collapseCrumbs
+    ? [
+        { kind: 'crumb', name: categoryTrail[0].name, slug: categoryTrail[0].slug },
+        { kind: 'ellipsis', hidden: hiddenCrumbs.map((c) => c.name).join(' › ') },
+        ...categoryTrail.slice(-2).map((c) => ({ kind: 'crumb' as const, name: c.name, slug: c.slug })),
+      ]
+    : categoryTrail.map((c) => ({ kind: 'crumb' as const, name: c.name, slug: c.slug }));
+
   const requireAuth = (next: () => void) => {
     if (!token) {
       toast.error('Please sign in to continue');
@@ -173,14 +196,28 @@ export function ProductDetail({ slug }: { slug: string }) {
     <Container className="py-8">
       {/* Breadcrumb */}
       <nav className="mb-6 flex items-center gap-1 text-sm text-muted-fg" aria-label="Breadcrumb">
-        <Link href="/" className="hover:text-brand">Home</Link>
-        <ChevronRight className="h-4 w-4" />
-        {categoryObj && (
-          <>
-            <Link href={`/c/${categoryObj.slug}`} className="hover:text-brand">{categoryObj.name}</Link>
-            <ChevronRight className="h-4 w-4" />
-          </>
-        )}
+        <Link href="/" className="shrink-0 hover:text-brand">Home</Link>
+        {crumbItems.map((it, i) => (
+          <span key={i} className="flex items-center gap-1">
+            <ChevronRight className="h-4 w-4 shrink-0" />
+            {it.kind === 'ellipsis' ? (
+              <button
+                type="button"
+                onClick={() => setShowAllCrumbs(true)}
+                title={it.hidden}
+                aria-label={`Show ${hiddenCrumbs.length} more categories`}
+                className="shrink-0 px-0.5 leading-none hover:text-brand"
+              >
+                …
+              </button>
+            ) : (
+              <Link href={`/c/${it.slug}`} className="shrink-0 whitespace-nowrap hover:text-brand">
+                {it.name}
+              </Link>
+            )}
+          </span>
+        ))}
+        <ChevronRight className="h-4 w-4 shrink-0" />
         <span className="truncate text-ink">{displayName}</span>
       </nav>
 
