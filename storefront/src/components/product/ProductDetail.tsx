@@ -92,10 +92,12 @@ export function ProductDetail({ slug }: { slug: string }) {
 
   const hasVariants = (product?.variants?.length ?? 0) > 0;
   const { data: stock } = useCheckStockQuery(selectedVariant?.sku ?? '', { skip: !selectedVariant?.sku });
-  // Variant products use SKU-level inventory; simple products use product.stock.
-  const outOfStock = hasVariants
-    ? stock?.inStock === false || stock?.available === 0
-    : ((product as any)?.stock ?? 1) <= 0;
+  // Variant products use SKU-level inventory but fall back to product.stock when
+  // the SKU isn't inventory-tracked (imported/seeded variants) — mirrors the
+  // backend cart. Simple products use product.stock directly.
+  const productStock = (product as any)?.stock ?? 0;
+  const available = hasVariants ? (stock?.available || productStock) : productStock;
+  const outOfStock = available <= 0;
   const wished = useAppSelector((s) => (product ? s.wishlist.items.some((w) => w.productId === product._id) : false));
 
   if (isLoading) return <DetailSkeleton />;
@@ -252,8 +254,8 @@ export function ProductDetail({ slug }: { slug: string }) {
           <div className="mt-5">
             {outOfStock ? (
               <Badge variant="neutral">Out of stock</Badge>
-            ) : stock?.available !== undefined && stock.available <= 5 ? (
-              <Badge variant="sale">Only {stock.available} left</Badge>
+            ) : available <= 5 ? (
+              <Badge variant="sale">Only {available} left</Badge>
             ) : (
               <span className="inline-flex items-center gap-1 text-sm font-semibold text-success"><Check className="h-4 w-4" /> In stock</span>
             )}
