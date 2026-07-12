@@ -22,6 +22,22 @@ import type { Address, CartItem, PaymentMethod } from '@/types';
 type Step = 'address' | 'review' | 'payment' | 'place';
 const STEP_ORDER: Step[] = ['address', 'review', 'payment', 'place'];
 
+// Saved addresses carry DB metadata (_id, isDefault, userId, …). The order API
+// validates with forbidNonWhitelisted, so send ONLY the address fields it
+// accepts — otherwise placement fails with a 400.
+function toShippingAddress(a: Address): Address {
+  return {
+    fullName: a.fullName,
+    line1: a.line1,
+    ...(a.line2 ? { line2: a.line2 } : {}),
+    city: a.city,
+    ...(a.state ? { state: a.state } : {}),
+    postalCode: a.postalCode,
+    countryCode: a.countryCode,
+    ...(a.phone ? { phone: a.phone } : {}),
+  };
+}
+
 export default function CheckoutPage() {
   const t = useTranslations('checkout');
   return (
@@ -92,7 +108,7 @@ function CheckoutView() {
     if (!chosen) { toast.error(t('addAddressFirst')); setStep('address'); return; }
     if (payment !== 'cod') { toast.error(t('couldNotPlace')); return; }
     try {
-      const created = await createOrder({ shippingAddress: chosen, notes: notes || undefined, paymentMethod: payment }).unwrap();
+      const created = await createOrder({ shippingAddress: toShippingAddress(chosen), notes: notes || undefined, paymentMethod: payment }).unwrap();
       router.push(`/checkout/confirmation/${created._id}`);
     } catch {
       toast.error(t('couldNotPlace'));
