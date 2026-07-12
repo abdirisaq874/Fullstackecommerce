@@ -43,6 +43,9 @@ export class RetrievalService {
           query: qstr,
           type: 'best_fields',
           fuzziness: 'AUTO',
+          // Require the first 2 chars to match before fuzzing — stops wild
+          // cross-word matches like "speaker"→"sweater"/"Bone Shaker".
+          prefix_length: 2,
           fields: [`name_${loc}^${3 * localeBoost}`, `shortDescription_${loc}^2`, `description_${loc}`],
         },
       });
