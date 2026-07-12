@@ -6,7 +6,7 @@ type InputType = 'search_document' | 'search_query';
 
 // A live search query can't wait on a cold embedding model. Cap query embeds
 // hard (→ graceful lexical fallback on timeout); allow indexing embeds to run long.
-const QUERY_EMBED_TIMEOUT_MS = parseInt(process.env.SEARCH_QUERY_EMBED_TIMEOUT_MS || '2500', 10);
+const QUERY_EMBED_TIMEOUT_MS = parseInt(process.env.SEARCH_QUERY_EMBED_TIMEOUT_MS || '6000', 10);
 const DOC_EMBED_TIMEOUT_MS = parseInt(process.env.SEARCH_DOC_EMBED_TIMEOUT_MS || '30000', 10);
 
 /**
