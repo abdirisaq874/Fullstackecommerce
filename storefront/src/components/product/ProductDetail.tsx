@@ -32,6 +32,32 @@ const PLACEHOLDER =
     `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" font-family="sans-serif" font-size="22" fill="#94a3b8" text-anchor="middle" dy=".3em">No image</text></svg>`,
   );
 
+// Colour-name → hex, used to render a solid swatch when a colour has no tagged
+// product image. Includes Turkish names (the imported catalogue is Turkish).
+const COLOR_HEX: Record<string, string> = {
+  black: '#111111', siyah: '#111111', beyaz: '#ffffff', white: '#ffffff',
+  red: '#dc2626', kirmizi: '#dc2626', kırmızı: '#dc2626', bordo: '#7f1d1d', maroon: '#7f1d1d',
+  blue: '#2563eb', mavi: '#2563eb', lacivert: '#1e3a8a', navy: '#1e3a8a',
+  green: '#16a34a', yesil: '#16a34a', yeşil: '#16a34a', haki: '#4d5d3a', khaki: '#b5a642',
+  yellow: '#eab308', sari: '#eab308', sarı: '#eab308',
+  orange: '#f97316', turuncu: '#f97316',
+  purple: '#7c3aed', mor: '#7c3aed', lila: '#c084fc', lilac: '#c084fc',
+  pink: '#ec4899', pembe: '#ec4899',
+  gray: '#6b7280', grey: '#6b7280', gri: '#6b7280',
+  brown: '#92400e', kahverengi: '#92400e', kahve: '#92400e',
+  beige: '#e3c9a8', bej: '#e3c9a8', krem: '#f5f0e1', cream: '#f5f0e1', ekru: '#e8e0cf',
+  gold: '#d4af37', altin: '#d4af37', altın: '#d4af37',
+  silver: '#c0c0c0', gumus: '#c0c0c0', gümüş: '#c0c0c0',
+};
+
+// Resolve a colour name (possibly multi-word, e.g. "Abanoz Siyah") to a hex by
+// matching any known colour word within it.
+function colorToHex(name: string): string | undefined {
+  const words = name.toLowerCase().split(/[\s/,-]+/).filter(Boolean);
+  for (const w of words) if (COLOR_HEX[w]) return COLOR_HEX[w];
+  return COLOR_HEX[name.toLowerCase().trim()];
+}
+
 export function ProductDetail({ slug }: { slug: string }) {
   const router = useRouter();
   const dispatch = useAppDispatch();
@@ -274,25 +300,70 @@ export function ProductDetail({ slug }: { slug: string }) {
           {displayShort && <p className="mt-4 text-muted-fg">{displayShort}</p>}
 
           {/* Variant options */}
-          {optionGroups.map((g) => (
-            <div key={g.name} className="mt-6">
-              <p className="mb-2 text-sm font-bold">{g.name}</p>
-              <div className="flex flex-wrap gap-2">
-                {g.values.map((val) => {
-                  const active = selected[g.name] === val;
-                  return (
-                    <button
-                      key={val}
-                      onClick={() => setSelected((s) => ({ ...s, [g.name]: val }))}
-                      className={cn('rounded-xl border-2 px-4 py-2 text-sm font-semibold transition', active ? 'border-brand bg-brand text-white' : 'border-line hover:border-brand')}
-                    >
-                      {val}
-                    </button>
-                  );
-                })}
+          {optionGroups.map((g) => {
+            const isColor = /^(colou?r|renk)$/i.test(g.name);
+            return (
+              <div key={g.name} className="mt-6">
+                <p className="mb-2 text-sm font-bold">
+                  {g.name}
+                  {isColor && selected[g.name] && (
+                    <span className="ml-2 font-normal text-muted-fg">{selected[g.name]}</span>
+                  )}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {g.values.map((val) => {
+                    const active = selected[g.name] === val;
+                    if (isColor) {
+                      // Visual swatch: prefer the product photo tagged with this
+                      // colour, then a solid hex chip, then an abbreviated label.
+                      const swatchImg = allImages.find((im) => im.altText === val)?.url;
+                      const hex = colorToHex(val);
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setSelected((s) => ({ ...s, [g.name]: val }))}
+                          title={val}
+                          aria-label={val}
+                          aria-pressed={active}
+                          className={cn(
+                            'relative h-12 w-12 overflow-hidden rounded-xl border-2 transition',
+                            active ? 'border-brand ring-2 ring-brand/30' : 'border-line hover:border-brand',
+                          )}
+                        >
+                          {swatchImg ? (
+                            <Image src={swatchImg} alt={val} fill className="object-cover" sizes="48px" />
+                          ) : (
+                            <span className="block h-full w-full" style={{ backgroundColor: hex ?? '#e5e7eb' }} />
+                          )}
+                          {!swatchImg && !hex && (
+                            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-ink">
+                              {val.slice(0, 3)}
+                            </span>
+                          )}
+                          {active && (
+                            <span className="absolute bottom-0.5 right-0.5 rounded-full bg-brand p-0.5 text-white">
+                              <Check className="h-3 w-3" />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    }
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setSelected((s) => ({ ...s, [g.name]: val }))}
+                        className={cn('rounded-xl border-2 px-4 py-2 text-sm font-semibold transition', active ? 'border-brand bg-brand text-white' : 'border-line hover:border-brand')}
+                      >
+                        {val}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Stock */}
           <div className="mt-5">
