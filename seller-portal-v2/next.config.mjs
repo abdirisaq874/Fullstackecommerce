@@ -8,6 +8,19 @@ import { withSentryConfig } from '@sentry/nextjs';
 
 const isProd = process.env.NODE_ENV === 'production';
 
+// NEXT_PUBLIC_API_URL includes a path (…/api/v1), but CSP `connect-src` matches
+// a source's path *exactly* unless it ends in `/`. Embedding the full path here
+// would allow only `https://host/api/v1` and BLOCK every real endpoint below it
+// (e.g. /api/v1/auth/login → "TypeError: Failed to fetch"). Allow the API
+// *origin* (scheme + host) instead, which covers all paths under it.
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+let apiConnectSrc = apiUrl;
+try {
+  if (apiUrl) apiConnectSrc = new URL(apiUrl).origin;
+} catch {
+  apiConnectSrc = apiUrl;
+}
+
 // Content Security Policy
 // NOTE: Next.js requires 'unsafe-inline' for scripts during development (HMR, inline
 // bootstrap scripts). In production we keep 'unsafe-inline' for now because Next.js
@@ -20,7 +33,7 @@ const cspDirectives = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  `connect-src 'self' ${process.env.NEXT_PUBLIC_API_URL || ''} https://*.ingest.sentry.io`,
+  `connect-src 'self' ${apiConnectSrc} https://*.ingest.sentry.io`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
