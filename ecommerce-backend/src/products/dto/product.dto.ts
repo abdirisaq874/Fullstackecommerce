@@ -127,6 +127,10 @@ export class ProductQueryDto extends PaginationDto {
   @ApiPropertyOptional({ enum: ['draft', 'active', 'archived'] })
   @IsOptional() @IsEnum(['draft', 'active', 'archived'])
   status?: string;
+
+  // Scope results to a single seller (seller-portal "my products" list, and
+  // public per-seller storefronts).
+  @ApiPropertyOptional() @IsOptional() @IsString() sellerId?: string;
 }
 
 export class CreateCategoryDto {

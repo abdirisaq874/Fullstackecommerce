@@ -107,6 +107,12 @@ export class ProductService {
       filter.status = 'active'; // Public API only shows active
     }
 
+    // Scope to a single seller when requested (seller-portal "my products",
+    // public seller storefronts). Ignore a malformed id rather than 500.
+    if (query.sellerId && Types.ObjectId.isValid(query.sellerId)) {
+      filter.sellerId = new Types.ObjectId(query.sellerId);
+    }
+
     if (query.category) {
       const category = await this.categoryModel.findOne({ slug: query.category });
       if (category) {
