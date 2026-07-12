@@ -56,25 +56,27 @@ async function main() {
     const chunk = products.slice(i, i + concurrency);
     await Promise.all(chunk.map(async (p: any) => {
       try {
-        const primary = (p.images || []).find((im: any) => im.isPrimary)?.url || p.images?.[0]?.url;
         const attrs = (p.attributes || []).filter((a: any) => a.key && a.value).slice(0, 8);
-        const draft = await withRetry(() => svc.draft({ name: p.name, attributes: attrs, imageUrl: primary }));
-        const embedText = `${p.name}. ${draft.shortDescription || ''}`.trim();
-        const vec = Array.from(await withRetry(() => svc.embed(embedText)));
+        // Lean path: 2 API calls per product — text-only enrich + one embedding
+        // that also drives category (cosine nearest, no extra call).
+        const enriched = await withRetry(() => svc.enrich({ name: p.name, attributes: attrs }));
+        const embedText = `${p.name}. ${enriched.shortDescription || ''}`.trim();
+        const vecF = await withRetry(() => svc.embed(embedText));
+        const cat = await svc.nearestCategory(vecF);
         const upd: any = {
-          description: draft.description || p.name,
-          shortDescription: draft.shortDescription || p.shortDescription || p.name.slice(0, 160),
-          tags: draft.tags || [],
-          keywords: draft.keywords || [],
-          embedding: vec,
+          description: enriched.description || p.name,
+          shortDescription: enriched.shortDescription || p.shortDescription || p.name.slice(0, 160),
+          tags: enriched.tags || [],
+          keywords: enriched.keywords || [],
+          embedding: Array.from(vecF),
           embeddingModel: 'qwen3-embedding-8b:1024',
           embeddingInput: createHash('sha1').update(embedText).digest('hex'),
           embeddedAt: new Date(),
         };
-        if (draft.categoryId) upd.categoryId = new Types.ObjectId(draft.categoryId);
+        if (cat?.categoryId) upd.categoryId = new Types.ObjectId(cat.categoryId);
         await Product.updateOne({ _id: p._id }, { $set: upd });
         done += 1;
-        if (samples.length < 6) samples.push(`• ${p.name.slice(0, 40)}\n    cat: ${draft.categoryPath || '(none)'}\n    short: ${(draft.shortDescription || '').slice(0, 110)}\n    tags: ${(draft.tags || []).slice(0, 6).join(', ')}`);
+        if (samples.length < 6) samples.push(`• ${p.name.slice(0, 40)}\n    cat: ${cat?.categoryPath || '(none)'}\n    short: ${(enriched.shortDescription || '').slice(0, 110)}\n    tags: ${(enriched.tags || []).slice(0, 6).join(', ')}`);
       } catch (e) {
         failed += 1;
         console.error(`  ✗ ${p.name?.slice(0, 40)}: ${(e as Error).message}`);

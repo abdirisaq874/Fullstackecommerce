@@ -206,6 +206,24 @@ export class ProductAiService {
     return this.classifyByTree(text);
   }
 
+  /**
+   * Cheap category assignment from an ALREADY-computed embedding — cosine
+   * nearest category, no extra API call (no query-embed, LLM re-rank or tree
+   * walk). For bulk backfills where one embedding serves both product + category.
+   */
+  async nearestCategory(vec: number[] | Float32Array): Promise<{ categoryId: string; categoryPath: string } | null> {
+    const cats = await this.ensureCache();
+    if (!cats.length) return null;
+    const q = vec instanceof Float32Array ? vec : Float32Array.from(vec);
+    let best = cats[0];
+    let bestScore = -Infinity;
+    for (const c of cats) {
+      const s = dot(q, c.vec);
+      if (s > bestScore) { bestScore = s; best = c; }
+    }
+    return { categoryId: best.id, categoryPath: best.path };
+  }
+
   async draft(input: AiDraftInput): Promise<ProductDraft> {
     if (!this.enabled) throw new BadRequestException('AI is not configured (set a real OPENROUTER_API_KEY).');
     if (!input?.name?.trim()) throw new BadRequestException('Product name is required.');
