@@ -53,7 +53,7 @@ async function main() {
       { email: s.email },
       {
         $set: { firstName: s.firstName, lastName: s.lastName, role: 'seller', isActive: true, emailVerified: true },
-        $setOnInsert: { email: s.email, password: hash },
+        $setOnInsert: { email: s.email, passwordHash: hash },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );

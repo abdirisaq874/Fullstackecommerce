@@ -58,7 +58,7 @@ async function main() {
   const hash = await bcrypt.hash(SELLER.password, 10);
   const user = await User.findOneAndUpdate(
     { email: SELLER.email },
-    { $set: { firstName: SELLER.firstName, lastName: SELLER.lastName, role: 'seller', isActive: true, emailVerified: true }, $setOnInsert: { email: SELLER.email, password: hash } },
+    { $set: { firstName: SELLER.firstName, lastName: SELLER.lastName, role: 'seller', isActive: true, emailVerified: true }, $setOnInsert: { email: SELLER.email, passwordHash: hash } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
   await SellerSettings.updateOne(
