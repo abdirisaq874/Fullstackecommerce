@@ -1,0 +1,23 @@
+# AI-enrich a seller's products (description/tags/keywords + leaf category + embedding).
+# Override BACKFILL_LIMIT via substitution: --substitutions=_LIMIT=20 (0 = all).
+steps:
+  - name: 'node:20'
+    entrypoint: 'bash'
+    args: ['-c', 'npm ci && npx ts-node src/database/enrich-seller-products.ts']
+    secretEnv: ['MONGODB_URI', 'OPENROUTER_API_KEY']
+    env:
+      - 'MONGODB_DB_NAME=ecommerce'
+      - 'BACKFILL_SELLER=ilyas'
+      - 'BACKFILL_LIMIT=${_LIMIT}'
+      - 'CONCURRENCY=6'
+availableSecrets:
+  secretManager:
+    - versionName: 'projects/suuq-ecommerce/secrets/MONGODB_URI/versions/latest'
+      env: 'MONGODB_URI'
+    - versionName: 'projects/suuq-ecommerce/secrets/OPENROUTER_API_KEY/versions/latest'
+      env: 'OPENROUTER_API_KEY'
+substitutions:
+  _LIMIT: '20'
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: '3000s'
