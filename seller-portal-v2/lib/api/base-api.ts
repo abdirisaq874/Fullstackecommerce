@@ -184,7 +184,7 @@ const baseQueryWithRetry = retry(rawBaseQuery, {
   },
 });
 
-// --- 401 reauth wrapper -----------------------------------------------------
+// --- 401 reauth wrapper (single-flight) -------------------------------------
 
 /**
  * Shape of the refresh response (envelope is unwrapped at parse time).
@@ -196,6 +196,61 @@ interface RefreshTokens {
   refreshToken: string;
 }
 
+/**
+ * Hard-redirect the browser to /login. Used only when a refresh genuinely
+ * fails (refresh token truly expired/revoked) so the user lands on the login
+ * screen instead of a raw "Unauthorized" error surfacing in the UI. Guards
+ * against SSR and against a redirect loop when already on the login page.
+ */
+function redirectToLogin(): void {
+  if (typeof window === 'undefined') return;
+  if (window.location.pathname.startsWith('/login')) return;
+  window.location.href = '/login';
+}
+
+/**
+ * A single in-flight refresh shared across all concurrent callers.
+ *
+ * The backend rotates refresh tokens — each is single-use: `/auth/refresh`
+ * deletes the presented token and issues a brand-new pair. If every 401'd
+ * request fired its own refresh, the first would succeed and the rest would
+ * 401 on the now-deleted token, wiping the session (the bug behind the
+ * intermittent "Unauthorized" on the dashboard after the access token
+ * expires). Sharing one promise means N concurrent 401s trigger exactly ONE
+ * refresh; they all await it, then retry with the freshly-stored token.
+ */
+let refreshPromise: Promise<string | null> | null = null;
+
+/**
+ * Run one `/auth/refresh` round. Returns the new access token on success, or
+ * null if there is no refresh token or the refresh was rejected. Uses the raw
+ * baseQuery (no retry) so a failure is a single, decisive attempt.
+ */
+async function performRefresh(
+  api: Parameters<typeof rawBaseQuery>[1],
+  extraOptions: Parameters<typeof rawBaseQuery>[2],
+): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+
+  const refreshResult = await rawBaseQuery(
+    { url: '/auth/refresh', method: 'POST', body: { refreshToken } },
+    api,
+    extraOptions,
+  );
+
+  if (refreshResult.data) {
+    const tokens = unwrapEnvelope<RefreshTokens>(
+      refreshResult.data as ResponseEnvelope<RefreshTokens> | RefreshTokens,
+    );
+    setTokens(tokens.accessToken, tokens.refreshToken);
+    // TODO(phase-2b): once `lib/store/auth-slice.ts` exists, also dispatch
+    //   api.dispatch({ type: 'auth/setCredentials', payload: tokens });
+    return tokens.accessToken;
+  }
+  return null;
+}
+
 const baseQueryWithReauth: BaseQueryFn<
   string | FetchArgs,
   unknown,
@@ -203,41 +258,31 @@ const baseQueryWithReauth: BaseQueryFn<
 > = async (args, api, extraOptions) => {
   let result = await baseQueryWithRetry(args, api, extraOptions);
 
-  if (result.error && result.error.status === 401) {
-    const refreshToken = getRefreshToken();
-    if (refreshToken) {
-      // NOTE: call the *raw* baseQuery (no retry) for the refresh itself —
-      // we want a single attempt; if it fails we log the user out.
-      const refreshResult = await rawBaseQuery(
-        {
-          url: '/auth/refresh',
-          method: 'POST',
-          body: { refreshToken },
-        },
-        api,
-        extraOptions,
-      );
+  // Auth endpoints (login/register/refresh) return 401 on genuine credential
+  // or token failures — never try to "refresh" those; let the error through.
+  const url = typeof args === 'string' ? args : args.url;
+  const isAuthRoute = url.startsWith('/auth/');
 
-      if (refreshResult.data) {
-        const tokens = unwrapEnvelope<RefreshTokens>(
-          refreshResult.data as ResponseEnvelope<RefreshTokens> | RefreshTokens,
-        );
-        setTokens(tokens.accessToken, tokens.refreshToken);
-        // TODO(phase-2b): once `lib/store/auth-slice.ts` exists, also dispatch
-        //   api.dispatch({ type: 'auth/setCredentials', payload: tokens });
-        // so any component reading tokens from Redux state stays in sync.
+  if (result.error && result.error.status === 401 && !isAuthRoute) {
+    // Single-flight guard: start a refresh only if one isn't already running.
+    // All concurrent 401s await the SAME promise, so only one `/auth/refresh`
+    // is sent. The `.finally` clears the shared promise once it settles, so the
+    // next time the access token expires a fresh refresh can run.
+    if (!refreshPromise) {
+      refreshPromise = performRefresh(api, extraOptions).finally(() => {
+        refreshPromise = null;
+      });
+    }
+    const newAccessToken = await refreshPromise;
 
-        // Retry the original request with the new access token.
-        result = await baseQueryWithRetry(args, api, extraOptions);
-      } else {
-        clearTokens();
-        // TODO(phase-2b): dispatch the real logout action once auth-slice exists:
-        //   api.dispatch({ type: 'auth/logout' });
-      }
+    if (newAccessToken) {
+      // Retry the original request with the freshly-stored access token.
+      result = await baseQueryWithRetry(args, api, extraOptions);
     } else {
-      // No refresh token to use — clear any stale access token and let the
-      // 401 surface to the caller (which will route to /login).
+      // Refresh genuinely failed (refresh token expired/revoked). End the
+      // session cleanly and route to login instead of surfacing a raw 401.
       clearTokens();
+      redirectToLogin();
     }
   }
 
