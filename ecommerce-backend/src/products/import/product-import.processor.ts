@@ -38,23 +38,25 @@ export class ProductImportProcessor {
   async handle(job: Job<ImportProductJob>): Promise<void> {
     const { jobId, sellerId, product } = job.data;
     try {
-      // 1. Rehost images → R2 (keep only the ones that succeed)
+      // 1. Rehost images → R2 (retry transient timeouts; keep only successes)
       const rehosted: string[] = [];
       for (const url of product.imageUrls) {
         try {
-          rehosted.push(await this.uploads.putRemoteImage(url, 'product'));
+          rehosted.push(await this.retry(() => this.uploads.putRemoteImage(url, 'product')));
         } catch (e) {
           this.logger.warn(`image rehost failed (${url}): ${(e as Error).message}`);
         }
       }
 
-      // 2. AI draft — description + category are mandatory
-      const draft = await this.ai.draft({
-        name: product.name,
-        brand: product.brand,
-        attributes: product.attributes,
-        imageUrl: rehosted[0],
-      });
+      // 2. AI draft — description + category are mandatory (retry transient failures)
+      const draft = await this.retry(() =>
+        this.ai.draft({
+          name: product.name,
+          brand: product.brand,
+          attributes: product.attributes,
+          imageUrl: rehosted[0],
+        }),
+      );
       if (!draft.categoryId) throw new Error('AI could not assign a category');
 
       // 3. Build the product payload
@@ -108,6 +110,20 @@ export class ProductImportProcessor {
         error: { handle: product.handle, name: product.name, stage: 'create', message: (e as Error).message },
       });
     }
+  }
+
+  /** Retry a transient (timeout / network / 5xx) async op with linear backoff. */
+  private async retry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+    let last: unknown;
+    for (let i = 0; i < tries; i += 1) {
+      try {
+        return await fn();
+      } catch (e) {
+        last = e;
+        if (i < tries - 1) await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+      }
+    }
+    throw last;
   }
 
   /** Atomically advance the progress counters and flip status when done. */

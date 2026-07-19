@@ -127,19 +127,25 @@ export class IndexingService {
     for (const locale of this.locales) {
       if (locale === this.baseLocale) continue;
       const loc = product.localizations[locale] || {};
+      // Collect only the fields still missing for this locale, then translate
+      // them in a single call (returns JSON keyed by field name).
+      const missing: Record<string, string> = {};
       for (const field of LOCALE_FIELDS) {
-        if (!loc[field] && base[field]) {
-          const translated = await this.translation.translate(base[field], this.baseLocale, locale);
-          if (translated) {
-            loc[field] = translated;
-            product.localizationMeta = product.localizationMeta || {};
-            product.localizationMeta[locale] = {
-              source: 'machine',
-              translatedAt: new Date(),
-              model: this.config.get<string>('search.openrouter.translationModel'),
-            };
-            changed = true;
+        if (!loc[field] && base[field]) missing[field] = base[field];
+      }
+      if (Object.keys(missing).length) {
+        const translated = await this.translation.translateFields(missing, this.baseLocale, locale);
+        if (translated) {
+          for (const [field, value] of Object.entries(translated)) {
+            if (value) loc[field] = value;
           }
+          product.localizationMeta = product.localizationMeta || {};
+          product.localizationMeta[locale] = {
+            source: 'machine',
+            translatedAt: new Date(),
+            model: this.translation.model,
+          };
+          changed = true;
         }
       }
       product.localizations[locale] = loc;

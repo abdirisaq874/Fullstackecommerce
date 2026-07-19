@@ -78,6 +78,13 @@ services:
       OPENROUTER_GEN_MODEL: google/gemma-4-26b-a4b-it
       OPENROUTER_VISION_MODEL: google/gemma-4-26b-a4b-it
       OPENROUTER_EMBED_MODEL: qwen/qwen3-embedding-8b
+      # Somali product translation — Gemini via its OpenAI-compatible endpoint.
+      # GEMINI_API_KEY is injected from Secret Manager (deploy.sh); never hardcoded.
+      TRANSLATION_ENABLED: "1"
+      TRANSLATION_PROVIDER: gemini
+      GEMINI_BASE_URL: https://generativelanguage.googleapis.com/v1beta/openai
+      GEMINI_TRANSLATION_MODEL: gemini-2.5-flash
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
       # Cloudflare R2 (S3-compatible) — product image uploads
       R2_ENDPOINT: https://c6afd8d77de48b568e4432620c142398.r2.cloudflarestorage.com
       R2_BUCKET: gaarsii-e-commerce-storage

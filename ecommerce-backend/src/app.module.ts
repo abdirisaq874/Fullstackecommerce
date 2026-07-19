@@ -14,6 +14,7 @@ import redisConfig from './config/redis.config';
 import stripeConfig from './config/stripe.config';
 import mailConfig from './config/mail.config';
 import searchConfig from './config/search.config';
+import translationConfig from './config/translation.config';
 
 import { SharedModule } from './shared/shared.module';
 import { AuthModule } from './auth/auth.module';
@@ -45,7 +46,7 @@ import { SellersModule } from './sellers/sellers.module';
     // ═══ Configuration ═══
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, authConfig, redisConfig, stripeConfig, mailConfig, searchConfig],
+      load: [appConfig, databaseConfig, authConfig, redisConfig, stripeConfig, mailConfig, searchConfig, translationConfig],
       envFilePath: ['.env', '.env.local'],
     }),
 
