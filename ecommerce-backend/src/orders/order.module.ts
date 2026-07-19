@@ -6,6 +6,7 @@ import { OrderOwnershipGuard } from './guards/order-ownership.guard';
 import { OrderEventsListener } from './listeners/order-events.listener';
 import { Order, OrderSchema, OrderStatusHistory, OrderStatusHistorySchema } from './schemas/order.schema';
 import { CartModule } from '../cart/cart.module';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { CartModule } from '../cart/cart.module';
       { name: OrderStatusHistory.name, schema: OrderStatusHistorySchema },
     ]),
     CartModule,
+    StoresModule,
   ],
   controllers: [OrderController],
   providers: [OrderService, OrderOwnershipGuard, OrderEventsListener],

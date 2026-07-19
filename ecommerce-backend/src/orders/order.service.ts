@@ -6,6 +6,7 @@ import { Model, Types } from 'mongoose';
 import { Order, OrderDocument, OrderStatusHistory } from './schemas/order.schema';
 import { CartService } from '../cart/cart.service';
 import { EventBusService } from '../shared/events/event-bus.service';
+import { StoresService } from '../stores/stores.service';
 import { PaginatedResponseDto, PaginationDto } from '../shared/database/pagination.dto';
 import { generateOrderNumber, roundMoney, idsEqual } from '../shared/utils/helpers';
 
@@ -24,6 +25,7 @@ export class OrderService {
     @InjectModel(OrderStatusHistory.name) private historyModel: Model<OrderStatusHistory>,
     private cartService: CartService,
     private eventBus: EventBusService,
+    private stores: StoresService,
   ) {}
 
   /**
@@ -36,7 +38,7 @@ export class OrderService {
     billingAddress?: Record<string, any>,
     notes?: string,
     paymentMethod = 'cod',
-  ): Promise<OrderDocument> {
+  ): Promise<OrderDocument[]> {
     // Only cash/pay-on-delivery is live today; card (Stripe), M-Pesa and Waafi
     // are planned. Reject the others server-side so a UI bug can't place an
     // unpayable order.
@@ -45,96 +47,99 @@ export class OrderService {
     }
 
     const cartSummary = await this.cartService.getCartSummary(userId);
-
     if (!cartSummary.items || cartSummary.items.length === 0) {
       throw new BadRequestException('Cart is empty');
     }
 
-    // Build order items from cart (snapshot everything, incl. the seller so the
-    // order can be grouped/shown per store without a later join).
-    const orderItems = cartSummary.items.map((item: any) => ({
-      productId: item.productId,
-      variantSku: item.variantSku,
-      productName: item.productName,
-      variantName: item.variantName,
-      sku: item.variantSku,
-      imageUrl: item.imageUrl,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      totalPrice: roundMoney(item.unitPrice * item.quantity),
-      sellerId: item.sellerId ? new Types.ObjectId(String(item.sellerId)) : undefined,
-      storeName: item.storeName,
-    }));
+    // Split the cart into one order PER STORE (a multi-store cart ⇒ N orders).
+    const groups = new Map<string, { storeName?: string; items: any[] }>();
+    for (const item of cartSummary.items as any[]) {
+      const storeId = item.sellerId ? String(item.sellerId) : 'unassigned';
+      let g = groups.get(storeId);
+      if (!g) {
+        g = { storeName: item.storeName, items: [] };
+        groups.set(storeId, g);
+      }
+      g.items.push(item);
+    }
 
-    const subtotal = roundMoney(
-      orderItems.reduce((sum, item) => sum + item.totalPrice, 0),
-    );
-    const shippingCost = 0; // Phase 2: calculated from shipping module
-    const taxAmount = 0; // Phase 2: calculated from tax service
-    const total = roundMoney(subtotal + shippingCost + taxAmount);
-
-    // Create order using transactional outbox
     const session = await this.eventBus.startSession();
     session.startTransaction();
-
     try {
-      const [order] = await this.orderModel.create(
-        [
+      const created: OrderDocument[] = [];
+      for (const [storeId, group] of groups) {
+        const hasStore = storeId !== 'unassigned';
+        const orderItems = group.items.map((item) => ({
+          productId: item.productId,
+          variantSku: item.variantSku,
+          productName: item.productName,
+          variantName: item.variantName,
+          sku: item.variantSku,
+          imageUrl: item.imageUrl,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: roundMoney(item.unitPrice * item.quantity),
+          sellerId: hasStore ? new Types.ObjectId(storeId) : undefined,
+          storeName: group.storeName,
+        }));
+        const subtotal = roundMoney(orderItems.reduce((s, i) => s + i.totalPrice, 0));
+        const total = roundMoney(subtotal); // shippingCost/taxAmount = 0 for now
+
+        const [order] = await this.orderModel.create(
+          [
+            {
+              orderNumber: generateOrderNumber(),
+              userId: new Types.ObjectId(userId),
+              storeId: hasStore ? new Types.ObjectId(storeId) : undefined,
+              storeName: group.storeName,
+              // COD needs no payment gate → confirmed on placement; payment stays
+              // pending until collected on delivery.
+              status: 'confirmed',
+              paymentMethod,
+              paymentStatus: 'pending',
+              items: orderItems,
+              shippingAddress,
+              billingAddress: billingAddress || shippingAddress,
+              subtotal,
+              shippingCost: 0,
+              taxAmount: 0,
+              total,
+              currency: 'USD',
+              notes,
+              placedAt: new Date(),
+              confirmedAt: new Date(),
+            },
+          ],
+          { session },
+        );
+
+        const inventoryItems = orderItems.map((i) => ({
+          variantSku: i.variantSku,
+          productId: i.productId.toString(),
+          quantity: i.quantity,
+        }));
+        await this.eventBus.emit(
+          'order.placed',
           {
-            orderNumber: generateOrderNumber(),
-            userId: new Types.ObjectId(userId),
-            // COD needs no payment gate, so it's confirmed on placement; payment
-            // itself stays pending until collected on delivery.
-            status: 'confirmed',
-            paymentMethod,
-            paymentStatus: 'pending',
-            items: orderItems,
-            shippingAddress,
-            billingAddress: billingAddress || shippingAddress,
-            subtotal,
-            shippingCost,
-            taxAmount,
-            total,
-            currency: 'USD',
-            notes,
-            placedAt: new Date(),
-            confirmedAt: new Date(),
+            orderId: order._id.toString(),
+            orderNumber: order.orderNumber,
+            userId,
+            storeId: hasStore ? storeId : undefined,
+            items: inventoryItems,
+            total: order.total,
+            currency: order.currency,
           },
-        ],
-        { session },
-      );
+          { session, aggregateType: 'Order', aggregateId: order._id },
+        );
+        created.push(order);
+      }
 
-      // Emit order.placed via outbox (same transaction)
-      const inventoryItems = orderItems.map((i) => ({
-        variantSku: i.variantSku,
-        productId: i.productId.toString(),
-        quantity: i.quantity,
-      }));
-
-      await this.eventBus.emit(
-        'order.placed',
-        {
-          orderId: order._id.toString(),
-          orderNumber: order.orderNumber,
-          userId,
-          items: inventoryItems,
-          total: order.total,
-          currency: order.currency,
-        },
-        {
-          session,
-          aggregateType: 'Order',
-          aggregateId: order._id,
-        },
-      );
-
-      // Clear cart inside the same transaction to prevent inconsistency
+      // Clear cart inside the same transaction to prevent inconsistency.
       await this.cartService.clearCart(userId, session);
-
       await session.commitTransaction();
 
-      this.logger.log(`Order created: ${order.orderNumber}`);
-      return order;
+      this.logger.log(`Placed ${created.length} order(s) from cart for user ${userId}`);
+      return created;
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -162,15 +167,21 @@ export class OrderService {
     if (role === 'admin') {
       return this.findById(orderId);
     }
-    // A seller may view an order that contains their products — scoped to just
-    // their line items (they must not see other stores' items or full totals).
+    // A seller may view an order belonging to a store they're a member of. New
+    // orders are per-store (order.storeId); legacy multi-seller orders are scoped
+    // to the member's own line items.
     if (role === 'seller') {
-      const sid = new Types.ObjectId(userId);
-      const order = await this.orderModel
-        .findOne({ _id: new Types.ObjectId(orderId), 'items.sellerId': sid })
-        .lean();
+      const order = await this.orderModel.findOne({ _id: new Types.ObjectId(orderId) }).lean();
       if (!order) throw new NotFoundException('Order not found');
-      return this.scopeToSeller(order, userId);
+      if (order.storeId && (await this.stores.getMembership(order.storeId.toString(), userId))) {
+        return order; // whole order — it already belongs to exactly this store
+      }
+      // legacy (pre-split) orders keyed only via item.sellerId == default store id
+      const mine = (order.items || []).filter((it: any) => String(it.sellerId) === userId);
+      if (mine.length && (await this.stores.getMembership(userId, userId))) {
+        return this.scopeToStore(order, userId);
+      }
+      throw new NotFoundException('Order not found');
     }
     const order = await this.orderModel.findOne({
       _id: new Types.ObjectId(orderId),
@@ -181,25 +192,28 @@ export class OrderService {
   }
 
   /**
-   * Reduce an order to a single seller's view: only their line items, with the
-   * subtotal/total recomputed from those items (order-level shipping/tax/discount
-   * belong to the whole order, so they're zeroed in the per-seller view).
+   * Reduce a legacy multi-seller order to one store's view: only that store's
+   * line items, subtotal/total recomputed (order-level shipping/tax belong to
+   * the whole order, so they're zeroed here).
    */
-  private scopeToSeller(order: any, sellerId: string): any {
-    const sid = String(sellerId);
+  private scopeToStore(order: any, storeId: string): any {
+    const sid = String(storeId);
     const items = (order.items || []).filter((it: any) => String(it.sellerId) === sid);
     const subtotal = roundMoney(items.reduce((s: number, it: any) => s + (it.totalPrice || 0), 0));
     return { ...order, items, subtotal, total: subtotal, shippingCost: 0, taxAmount: 0, discountAmount: 0 };
   }
 
-  /** Orders that contain the given seller's products (their sales), scoped to their items. */
-  async findBySeller(sellerId: string, pagination: PaginationDto): Promise<PaginatedResponseDto<any>> {
-    const filter = { 'items.sellerId': new Types.ObjectId(sellerId) };
+  /** A store's sales orders. New orders match on `storeId`; legacy ones on item.sellerId. */
+  async findByStore(storeId: string, pagination: PaginationDto): Promise<PaginatedResponseDto<any>> {
+    const sid = new Types.ObjectId(storeId);
+    const filter = { $or: [{ storeId: sid }, { 'items.sellerId': sid }] };
     const [orders, total] = await Promise.all([
       this.orderModel.find(filter).sort({ createdAt: -1 }).skip(pagination.skip).limit(pagination.limit).lean(),
       this.orderModel.countDocuments(filter),
     ]);
-    const scoped = orders.map((o) => this.scopeToSeller(o, sellerId));
+    const scoped = orders.map((o) =>
+      o.storeId && String(o.storeId) === String(storeId) ? o : this.scopeToStore(o, storeId),
+    );
     return new PaginatedResponseDto(scoped, total, pagination.page, pagination.limit);
   }
 

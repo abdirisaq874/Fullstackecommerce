@@ -4,6 +4,8 @@ import {
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { OrderService } from './order.service';
 import { Auth, CurrentUser } from '../auth/guards/auth.guards';
+import { StoreScoped, ActiveStore } from '../stores/guards/store-context.guard';
+import { StoreRole } from '../stores/schemas/store-membership.schema';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import { PaginationDto } from '../shared/database/pagination.dto';
 import {
@@ -125,13 +127,13 @@ export class OrderController {
   }
 
   @Get('seller')
-  @Auth('admin', 'seller')
-  @ApiOperation({ summary: "Orders containing the current seller's products (their sales)" })
+  @StoreScoped(StoreRole.STAFF)
+  @ApiOperation({ summary: "The active store's sales orders" })
   async findSellerOrders(
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @Query() pagination: PaginationDto,
   ) {
-    return this.orderService.findBySeller(userId, pagination);
+    return this.orderService.findByStore(storeId, pagination);
   }
 
   @Get(':id')

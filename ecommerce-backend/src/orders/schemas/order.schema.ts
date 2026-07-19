@@ -24,6 +24,10 @@ export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
 export class Order {
   @Prop({ unique: true, index: true }) orderNumber: string;
   @Prop({ type: Types.ObjectId, ref: 'User', index: true }) userId: Types.ObjectId;
+  // The store this order belongs to. A multi-store cart is split into one order
+  // per store at checkout, so every new order has exactly one storeId.
+  @Prop({ type: Types.ObjectId, ref: 'Store', index: true }) storeId?: Types.ObjectId;
+  @Prop() storeName?: string;
 
   @Prop({
     enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'],
@@ -61,6 +65,7 @@ export class Order {
 export const OrderSchema = SchemaFactory.createForClass(Order);
 OrderSchema.index({ userId: 1, createdAt: -1 });
 OrderSchema.index({ status: 1, createdAt: -1 });
+OrderSchema.index({ storeId: 1, createdAt: -1 });
 
 @Schema({ timestamps: true, collection: 'order_status_history' })
 export class OrderStatusHistory {
