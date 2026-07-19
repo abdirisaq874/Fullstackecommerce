@@ -11,7 +11,9 @@ interface CreateOrderBody {
 
 export const ordersApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    createOrder: builder.mutation<Order, CreateOrderBody>({
+    // Checkout splits a multi-store cart into ONE order per store, so this
+    // returns an array of the placed orders.
+    createOrder: builder.mutation<Order[], CreateOrderBody>({
       query: (body) => ({ url: '/orders', method: 'POST', body }),
       invalidatesTags: ['Order', 'Cart'],
     }),

@@ -108,8 +108,13 @@ function CheckoutView() {
     if (!chosen) { toast.error(t('addAddressFirst')); setStep('address'); return; }
     if (payment !== 'cod') { toast.error(t('couldNotPlace')); return; }
     try {
+      // A multi-store cart places one order per store → an array of orders.
       const created = await createOrder({ shippingAddress: toShippingAddress(chosen), notes: notes || undefined, paymentMethod: payment }).unwrap();
-      router.push(`/checkout/confirmation/${created._id}`);
+      const orders = Array.isArray(created) ? created : [created];
+      if (!orders.length) { toast.error(t('couldNotPlace')); return; }
+      // Land on the first order's confirmation; the rest are in the buyer's order history.
+      const first = orders[0]._id;
+      router.push(`/checkout/confirmation/${first}${orders.length > 1 ? `?more=${orders.length - 1}` : ''}`);
     } catch {
       toast.error(t('couldNotPlace'));
     }

@@ -12,6 +12,7 @@ import { useListOrdersQuery, useListMessagesQuery, useListReturnsQuery, useListI
 import { useAppDispatch, useAppSelector } from '@/lib/api/store';
 import { setSidebarOpen } from '@/lib/api/ui-slice';
 import { selectCurrentUser } from '@/lib/store/auth-slice';
+import { StoreSwitcher } from './store-switcher';
 import { UserRole } from '@/lib/types/user';
 import type { ComponentType, SVGProps } from 'react';
 
@@ -177,6 +178,8 @@ export function Sidebar() {
             );
           })}
         </nav>
+
+        <StoreSwitcher />
 
         <Link
           href="/settings"
