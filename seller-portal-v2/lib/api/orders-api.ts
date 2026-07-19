@@ -2,17 +2,14 @@
  * Orders RTK Query endpoint slice — wired to the real backend.
  *
  * Endpoint mapping:
- *   listOrders        → GET   /orders                  (paginated, auth required)
- *   getOrder          → GET   /orders/:id
+ *   listOrders        → GET   /orders/seller           (seller's sales, paginated)
+ *   getOrder          → GET   /orders/:id              (seller-scoped to their items)
  *   setOrderStatus    → PATCH /admin/orders/:id/status (admin-only)
  *   fulfillOrder      → PATCH /admin/orders/:id/status (admin-only; status='shipped')
  *
- * NOTE (seller scoping): `GET /orders` currently returns orders for the
- * *authenticated user* (`OrderController.findMyOrders` calls
- * `orderService.findByUser`). A true seller-scoped view (orders that contain
- * items from the seller's catalogue) is not yet implemented on the backend.
- * TODO(backend): add a seller-scoped endpoint (e.g. `GET /seller/orders`) that
- * filters orders to those containing items belonging to the current seller.
+ * Seller scoping: `GET /orders/seller` returns orders that CONTAIN the current
+ * seller's products (their sales), each reduced to just that seller's line items
+ * — not orders the seller placed as a buyer (that's `GET /orders`).
  *
  * TODO(backend): `fulfillOrder` reuses `PATCH /admin/orders/:id/status` with
  * `status='shipped'`. The carrier / trackingNumber / weightKg fields are NOT
@@ -80,8 +77,11 @@ function mapOrder(raw: any): Order {
 export const ordersApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     listOrders: builder.query<Order[], ListOrdersParams | void>({
+      // Seller-scoped: orders containing THIS seller's products (their sales),
+      // not orders the seller placed as a buyer. Backend scopes each order to
+      // the seller's own line items.
       query: (params) => ({
-        url: '/orders',
+        url: '/orders/seller',
         method: 'GET',
         params: params ?? undefined,
       }),

@@ -158,9 +158,19 @@ export class OrderService {
     orderId: string,
     userId: string,
     role?: string,
-  ): Promise<OrderDocument> {
+  ): Promise<any> {
     if (role === 'admin') {
       return this.findById(orderId);
+    }
+    // A seller may view an order that contains their products — scoped to just
+    // their line items (they must not see other stores' items or full totals).
+    if (role === 'seller') {
+      const sid = new Types.ObjectId(userId);
+      const order = await this.orderModel
+        .findOne({ _id: new Types.ObjectId(orderId), 'items.sellerId': sid })
+        .lean();
+      if (!order) throw new NotFoundException('Order not found');
+      return this.scopeToSeller(order, userId);
     }
     const order = await this.orderModel.findOne({
       _id: new Types.ObjectId(orderId),
@@ -168,6 +178,29 @@ export class OrderService {
     });
     if (!order) throw new NotFoundException('Order not found');
     return order;
+  }
+
+  /**
+   * Reduce an order to a single seller's view: only their line items, with the
+   * subtotal/total recomputed from those items (order-level shipping/tax/discount
+   * belong to the whole order, so they're zeroed in the per-seller view).
+   */
+  private scopeToSeller(order: any, sellerId: string): any {
+    const sid = String(sellerId);
+    const items = (order.items || []).filter((it: any) => String(it.sellerId) === sid);
+    const subtotal = roundMoney(items.reduce((s: number, it: any) => s + (it.totalPrice || 0), 0));
+    return { ...order, items, subtotal, total: subtotal, shippingCost: 0, taxAmount: 0, discountAmount: 0 };
+  }
+
+  /** Orders that contain the given seller's products (their sales), scoped to their items. */
+  async findBySeller(sellerId: string, pagination: PaginationDto): Promise<PaginatedResponseDto<any>> {
+    const filter = { 'items.sellerId': new Types.ObjectId(sellerId) };
+    const [orders, total] = await Promise.all([
+      this.orderModel.find(filter).sort({ createdAt: -1 }).skip(pagination.skip).limit(pagination.limit).lean(),
+      this.orderModel.countDocuments(filter),
+    ]);
+    const scoped = orders.map((o) => this.scopeToSeller(o, sellerId));
+    return new PaginatedResponseDto(scoped, total, pagination.page, pagination.limit);
   }
 
   async findByOrderNumber(orderNumber: string): Promise<OrderDocument> {

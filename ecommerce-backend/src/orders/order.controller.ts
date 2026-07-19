@@ -124,6 +124,16 @@ export class OrderController {
     return this.orderService.findByUser(userId, pagination);
   }
 
+  @Get('seller')
+  @Auth('admin', 'seller')
+  @ApiOperation({ summary: "Orders containing the current seller's products (their sales)" })
+  async findSellerOrders(
+    @CurrentUser('_id') userId: string,
+    @Query() pagination: PaginationDto,
+  ) {
+    return this.orderService.findBySeller(userId, pagination);
+  }
+
   @Get(':id')
   @Auth()
   @ApiOperation({ summary: 'Get order by ID' })
