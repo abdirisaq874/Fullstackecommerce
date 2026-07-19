@@ -3,7 +3,9 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ShippingService } from './shipping.service';
-import { Auth, CurrentUser } from '../auth/guards/auth.guards';
+import { CurrentUser } from '../auth/guards/auth.guards';
+import { StoreScoped, ActiveStore } from '../stores/guards/store-context.guard';
+import { StoreRole } from '../stores/schemas/store-membership.schema';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import {
   CreateZoneDto, UpdateZoneDto,
@@ -19,96 +21,96 @@ export class ShippingController {
   // ─── Zones ───
 
   @Get('zones')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: "List the current seller's shipping zones" })
   async listZones(
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.shippingService.listZones(userId, role);
+    return this.shippingService.listZones(storeId, role);
   }
 
   @Post('zones')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Create a shipping zone' })
   async createZone(
     @Body() dto: CreateZoneDto,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
   ) {
-    return this.shippingService.createZone(dto, userId);
+    return this.shippingService.createZone(dto, storeId);
   }
 
   @Patch('zones/:id')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Update a shipping zone' })
   async updateZone(
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateZoneDto,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.shippingService.updateZone(id, dto, userId, role);
+    return this.shippingService.updateZone(id, dto, storeId, role);
   }
 
   @Delete('zones/:id')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Soft-delete a shipping zone (and its rates)' })
   async deleteZone(
     @Param('id', ParseObjectIdPipe) id: string,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.shippingService.deleteZone(id, userId, role);
+    return this.shippingService.deleteZone(id, storeId, role);
   }
 
   // ─── Rates ───
 
   @Get('zones/:zoneId/rates')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'List rates for a shipping zone' })
   async listRates(
     @Param('zoneId', ParseObjectIdPipe) zoneId: string,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.shippingService.listRates(zoneId, userId, role);
+    return this.shippingService.listRates(zoneId, storeId, role);
   }
 
   @Post('zones/:zoneId/rates')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Create a rate within a shipping zone' })
   async createRate(
     @Param('zoneId', ParseObjectIdPipe) zoneId: string,
     @Body() dto: CreateRateDto,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.shippingService.createRate(zoneId, dto, userId, role);
+    return this.shippingService.createRate(zoneId, dto, storeId, role);
   }
 
   @Patch('zones/:zoneId/rates/:rateId')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Update a shipping rate' })
   async updateRate(
     @Param('zoneId', ParseObjectIdPipe) zoneId: string,
     @Param('rateId', ParseObjectIdPipe) rateId: string,
     @Body() dto: UpdateRateDto,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.shippingService.updateRate(zoneId, rateId, dto, userId, role);
+    return this.shippingService.updateRate(zoneId, rateId, dto, storeId, role);
   }
 
   @Delete('zones/:zoneId/rates/:rateId')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Soft-delete a shipping rate' })
   async deleteRate(
     @Param('zoneId', ParseObjectIdPipe) zoneId: string,
     @Param('rateId', ParseObjectIdPipe) rateId: string,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.shippingService.deleteRate(zoneId, rateId, userId, role);
+    return this.shippingService.deleteRate(zoneId, rateId, storeId, role);
   }
 
   // ─── Quote (Public) ───

@@ -8,6 +8,8 @@ import {
   MessageThreadSchema,
 } from '../messages/schemas/message-thread.schema';
 
+import { StoresModule } from '../stores/stores.module';
+
 import { SearchController } from './search.controller';
 import { SearchService } from './search.service';
 
@@ -18,6 +20,7 @@ import { SearchService } from './search.service';
       { name: Order.name, schema: OrderSchema },
       { name: MessageThread.name, schema: MessageThreadSchema },
     ]),
+    StoresModule,
   ],
   controllers: [SearchController],
   providers: [SearchService],

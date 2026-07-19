@@ -4,7 +4,7 @@ import { Model, Types } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Cart, CartDocument } from './schemas/cart.schema';
 import { Product } from '../products/schemas/product.schema';
-import { SellerSettings } from '../seller-settings/schemas/seller-settings.schema';
+import { Store } from '../stores/schemas/store.schema';
 import { InventoryService } from '../inventory/inventory.service';
 import { RedisService } from '../shared/database/redis.service';
 import { roundMoney } from '../shared/utils/helpers';
@@ -17,7 +17,7 @@ export class CartService {
   constructor(
     @InjectModel(Cart.name) private cartModel: Model<Cart>,
     @InjectModel(Product.name) private productModel: Model<Product>,
-    @InjectModel(SellerSettings.name) private sellerSettingsModel: Model<SellerSettings>,
+    @InjectModel(Store.name) private storeModel: Model<Store>,
     private inventoryService: InventoryService,
     private redis: RedisService,
     private config: ConfigService,
@@ -225,34 +225,32 @@ export class CartService {
       }
     }
 
-    // Enrich each line with its seller + store name so the storefront can group
-    // the cart/checkout by store. Two batched lookups (products → sellerId,
-    // sellers → displayName), no N+1.
+    // Enrich each line with its store id + name so the storefront can group the
+    // cart/checkout by store. Two batched lookups (products → storeId (sellerId),
+    // stores → displayName), no N+1. product.sellerId IS the store id.
     const productIds = [...new Set(cart.items.map((i) => i.productId.toString()))];
     const products = await this.productModel
       .find({ _id: { $in: productIds.map((id) => new Types.ObjectId(id)) } })
       .select('sellerId')
       .lean();
-    const sellerByProduct = new Map(
+    const storeByProduct = new Map(
       products.map((p: any) => [p._id.toString(), p.sellerId ? p.sellerId.toString() : undefined]),
     );
-    const sellerIds = [...new Set([...sellerByProduct.values()].filter(Boolean) as string[])];
-    const settings = sellerIds.length
-      ? await this.sellerSettingsModel
-          .find({ sellerId: { $in: sellerIds.map((id) => new Types.ObjectId(id)) } })
-          .select('sellerId storeProfile.displayName')
+    const storeIds = [...new Set([...storeByProduct.values()].filter(Boolean) as string[])];
+    const stores = storeIds.length
+      ? await this.storeModel
+          .find({ _id: { $in: storeIds.map((id) => new Types.ObjectId(id)) } })
+          .select('displayName')
           .lean()
       : [];
-    const nameBySeller = new Map(
-      settings.map((s: any) => [s.sellerId?.toString(), s.storeProfile?.displayName]),
-    );
+    const nameByStore = new Map(stores.map((s: any) => [s._id.toString(), s.displayName]));
     const items = cart.items.map((item) => {
       const plain = (item as any).toObject ? (item as any).toObject() : item;
-      const sellerId = sellerByProduct.get(item.productId.toString());
+      const storeId = storeByProduct.get(item.productId.toString());
       return {
         ...plain,
-        sellerId,
-        storeName: (sellerId && nameBySeller.get(sellerId)) || 'Store',
+        sellerId: storeId, // kept as `sellerId` (== store id) for the order snapshot
+        storeName: (storeId && nameByStore.get(storeId)) || 'Store',
       };
     });
 

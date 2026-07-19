@@ -8,6 +8,7 @@ import {
 } from './schemas/seller-payout.schema';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
       { name: Order.name, schema: OrderSchema },
       { name: Product.name, schema: ProductSchema },
     ]),
+    StoresModule,
   ],
   controllers: [SellerFinanceController],
   providers: [SellerFinanceService],

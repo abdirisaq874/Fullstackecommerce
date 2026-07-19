@@ -5,7 +5,9 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { Auth, CurrentUser } from '../auth/guards/auth.guards';
+import { CurrentUser } from '../auth/guards/auth.guards';
+import { StoreScoped, ActiveStore } from '../stores/guards/store-context.guard';
+import { StoreRole } from '../stores/schemas/store-membership.schema';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import { SellerFinanceService } from './seller-finance.service';
 import {
@@ -21,47 +23,47 @@ export class SellerFinanceController {
   constructor(private readonly financeService: SellerFinanceService) {}
 
   @Get('balance')
-  @Auth('seller', 'admin')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Get seller balance summary' })
   @ApiResponse({ status: 200, type: BalanceResponseDto })
   async getBalance(
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
   ): Promise<BalanceResponseDto> {
-    return this.financeService.balance(userId);
+    return this.financeService.balance(storeId);
   }
 
   @Get('transactions')
-  @Auth('seller', 'admin')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'List seller transactions (sales / refunds)' })
   @ApiResponse({ status: 200, description: 'Paginated transaction list' })
   async listTransactions(
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @Query() query: TransactionQueryDto,
   ) {
-    return this.financeService.listTransactions(userId, query);
+    return this.financeService.listTransactions(storeId, query);
   }
 
   @Get('payouts')
-  @Auth('seller', 'admin')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'List seller payouts' })
   @ApiResponse({ status: 200, description: 'Paginated payout list' })
   async listPayouts(
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @Query() query: PayoutQueryDto,
   ) {
-    return this.financeService.listPayouts(userId, query);
+    return this.financeService.listPayouts(storeId, query);
   }
 
   @Get('payouts/:id')
-  @Auth('seller', 'admin')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Get payout detail' })
   @ApiResponse({ status: 200, description: 'Payout document' })
   @ApiResponse({ status: 404, description: 'Payout not found' })
   async getPayout(
     @Param('id', ParseObjectIdPipe) id: string,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.financeService.getPayout(id, userId, role);
+    return this.financeService.getPayout(id, storeId, role);
   }
 }

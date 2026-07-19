@@ -9,10 +9,11 @@ import {
   JwtAuthGuard,
   RolesGuard,
   Roles,
-  CurrentUser,
 } from '../auth/guards/auth.guards';
 import { UserRole } from '../users/schemas/user.schema';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
+import { StoreScoped, ActiveStore } from '../stores/guards/store-context.guard';
+import { StoreRole } from '../stores/schemas/store-membership.schema';
 import { SellerCustomersService } from './seller-customers.service';
 import { CustomerQueryDto } from './dto/customer-query.dto';
 
@@ -36,11 +37,12 @@ export class SellerCustomersController {
     status: 200,
     description: 'Paginated list of seller customers',
   })
+  @StoreScoped(StoreRole.STAFF)
   async list(
-    @CurrentUser('_id') sellerId: string,
+    @ActiveStore('storeId') storeId: string,
     @Query() query: CustomerQueryDto,
   ) {
-    return this.sellerCustomersService.listForSeller(sellerId, query);
+    return this.sellerCustomersService.listForSeller(storeId, query);
   }
 
   @Get('/:userId')
@@ -54,10 +56,11 @@ export class SellerCustomersController {
     status: 404,
     description: 'Customer not found for this seller',
   })
+  @StoreScoped(StoreRole.STAFF)
   async getOne(
-    @CurrentUser('_id') sellerId: string,
+    @ActiveStore('storeId') storeId: string,
     @Param('userId', ParseObjectIdPipe) userId: string,
   ) {
-    return this.sellerCustomersService.getForSeller(sellerId, userId);
+    return this.sellerCustomersService.getForSeller(storeId, userId);
   }
 }

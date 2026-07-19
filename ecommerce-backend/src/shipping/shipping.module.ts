@@ -4,6 +4,7 @@ import { ShippingController } from './shipping.controller';
 import { ShippingService } from './shipping.service';
 import { ShippingZone, ShippingZoneSchema } from './schemas/shipping-zone.schema';
 import { ShippingRate, ShippingRateSchema } from './schemas/shipping-rate.schema';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { ShippingRate, ShippingRateSchema } from './schemas/shipping-rate.schema
       { name: ShippingZone.name, schema: ShippingZoneSchema },
       { name: ShippingRate.name, schema: ShippingRateSchema },
     ]),
+    StoresModule,
   ],
   controllers: [ShippingController],
   providers: [ShippingService],

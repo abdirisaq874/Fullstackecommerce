@@ -17,10 +17,9 @@ import {
 import {
   CurrentUser,
   JwtAuthGuard,
-  Roles,
-  RolesGuard,
 } from '../auth/guards/auth.guards';
-import { UserRole } from '../users/schemas/user.schema';
+import { StoreScoped, ActiveStore } from '../stores/guards/store-context.guard';
+import { StoreRole } from '../stores/schemas/store-membership.schema';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import { PaginationDto } from '../shared/database/pagination.dto';
 import { ReturnsService } from './returns.service';
@@ -70,33 +69,30 @@ export class ReturnsController {
   // ═══════════════════════════════════════════
 
   @Get('/')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'List returns for the authenticated seller' })
   @ApiResponse({ status: 200, description: 'Paginated list of returns' })
   async listForSeller(
-    @CurrentUser('_id') sellerId: string,
+    @ActiveStore('storeId') storeId: string,
     @Query() query: ReturnQueryDto,
   ) {
-    return this.returnsService.listForSeller(sellerId, query);
+    return this.returnsService.listForSeller(storeId, query);
   }
 
   @Get('/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Get one return (must belong to this seller)' })
   @ApiResponse({ status: 200, description: 'Return detail' })
   @ApiResponse({ status: 404, description: 'Return not found' })
   async getOne(
-    @CurrentUser('_id') sellerId: string,
+    @ActiveStore('storeId') storeId: string,
     @Param('id', ParseObjectIdPipe) id: string,
   ) {
-    return this.returnsService.getForSeller(sellerId, id);
+    return this.returnsService.getForSeller(storeId, id);
   }
 
   @Patch('/:id/status')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({
     summary: 'Transition a return to a new status (state machine enforced)',
   })
@@ -104,16 +100,15 @@ export class ReturnsController {
   @ApiResponse({ status: 409, description: 'Invalid status transition' })
   @ApiResponse({ status: 404, description: 'Return not found' })
   async updateStatus(
-    @CurrentUser('_id') sellerId: string,
+    @ActiveStore('storeId') storeId: string,
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateReturnStatusDto,
   ) {
-    return this.returnsService.transition(id, sellerId, dto.status, dto.notes);
+    return this.returnsService.transition(id, storeId, dto.status, dto.notes);
   }
 
   @Patch('/:id/inspection')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({
     summary: 'Record the inspection outcome (only when status == inspected)',
   })
@@ -121,10 +116,10 @@ export class ReturnsController {
   @ApiResponse({ status: 409, description: "Return is not in 'inspected' state" })
   @ApiResponse({ status: 404, description: 'Return not found' })
   async recordInspection(
-    @CurrentUser('_id') sellerId: string,
+    @ActiveStore('storeId') storeId: string,
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: RecordInspectionDto,
   ) {
-    return this.returnsService.recordInspection(id, sellerId, dto);
+    return this.returnsService.recordInspection(id, storeId, dto);
   }
 }
