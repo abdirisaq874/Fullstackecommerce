@@ -1,7 +1,7 @@
-import { InjectQueue } from '@nestjs/bull';
+import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { Queue } from 'bull';
+import { Queue } from 'bullmq';
 import { SEARCH_INDEXING_QUEUE } from './indexing.processor';
 
 /**

@@ -3,7 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
-import { BullModule } from '@nestjs/bull';
+import { BullModule } from '@nestjs/bullmq';
+import { OutboxModule } from './outbox/outbox.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 
@@ -41,6 +42,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { RecommendationsModule } from './recommendations/recommendations.module';
 import { SellersModule } from './sellers/sellers.module';
 import { StoresModule } from './stores/stores.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -80,10 +82,12 @@ import { StoresModule } from './stores/stores.module';
     // ═══ Background Jobs ═══
     BullModule.forRootAsync({
       useFactory: (config: ConfigService) => ({
-        redis: {
+        connection: {
           host: config.get<string>('redis.host'),
           port: config.get<number>('redis.port'),
           password: config.get<string>('redis.password'),
+          // BullMQ requires this on the shared ioredis connection.
+          maxRetriesPerRequest: null,
         },
       }),
       inject: [ConfigService],
@@ -91,6 +95,12 @@ import { StoresModule } from './stores/stores.module';
 
     // ═══ Cron/Scheduled Tasks ═══
     ScheduleModule.forRoot(),
+
+    // ═══ Transactional outbox (API process runs the poller/producer) ═══
+    OutboxModule.forRoot({ poller: true }),
+
+    // ═══ Mail (API mounts the Resend delivery webhook; sending runs in workers) ═══
+    MailModule.forApi(),
 
     // ═══ Feature Modules ═══
     SharedModule,

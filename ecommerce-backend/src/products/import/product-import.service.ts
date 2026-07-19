@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bull';
+import { InjectQueue } from '@nestjs/bullmq';
 import { InjectModel } from '@nestjs/mongoose';
-import { Queue } from 'bull';
+import { Queue } from 'bullmq';
 import { Model, Types } from 'mongoose';
 import { ImportJob, ImportJobDocument } from '../schemas/import-job.schema';
 import { parseImportFile } from './product-import.parser';

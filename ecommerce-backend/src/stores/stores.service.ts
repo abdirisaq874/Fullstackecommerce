@@ -1,5 +1,5 @@
 import {
-  Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException,
+  Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException, Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -8,6 +8,8 @@ import {
   StoreMembership, StoreMembershipDocument, StoreRole, MembershipStatus,
 } from './schemas/store-membership.schema';
 import { User } from '../users/schemas/user.schema';
+import { OutboxService } from '../outbox/outbox.service';
+import { EmailEventType } from '../shared/events/email-event.enum';
 import { CreateStoreDto, UpdateStoreDto, AddMemberDto, UpdateMemberRoleDto } from './dto/store.dto';
 
 const MAX_STORES_PER_OWNER = 10;
@@ -24,10 +26,13 @@ export interface ActiveStoreContext {
 
 @Injectable()
 export class StoresService {
+  private readonly logger = new Logger(StoresService.name);
+
   constructor(
     @InjectModel(Store.name) private storeModel: Model<Store>,
     @InjectModel(StoreMembership.name) private membershipModel: Model<StoreMembership>,
     @InjectModel(User.name) private userModel: Model<User>,
+    private outbox: OutboxService,
   ) {}
 
   private slugify(s: string): string {
@@ -263,6 +268,31 @@ export class StoresService {
       },
       { upsert: true },
     );
+
+    // Notify the added member (best-effort — never block the membership change).
+    try {
+      const [store, inviter] = await Promise.all([
+        this.storeModel.findById(storeId).select('displayName').lean(),
+        this.userModel.findById(actingUserId).select('firstName lastName').lean(),
+      ]);
+      const inv = inviter as { firstName?: string; lastName?: string } | null;
+      await this.outbox.publish({
+        eventType: EmailEventType.STORE_STAFF_INVITED,
+        aggregateType: 'membership',
+        aggregateId: `${storeId}_${targetId}`,
+        idempotencyKey: `store.staff.invited:${storeId}:${targetId}:${new Date().getTime()}`,
+        payload: {
+          recipientEmail: dto.email.toLowerCase(),
+          storeId,
+          storeName: (store as { displayName?: string } | null)?.displayName,
+          inviterName: inv ? `${inv.firstName || ''} ${inv.lastName || ''}`.trim() : undefined,
+          role: dto.role,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`staff-invite email publish failed: ${(e as Error).message}`);
+    }
+
     return { userId: targetId, role: dto.role };
   }
 

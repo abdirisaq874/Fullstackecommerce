@@ -1,7 +1,7 @@
-import { Process, Processor } from '@nestjs/bull';
+import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Job } from 'bull';
+import { Job } from 'bullmq';
 import { Model } from 'mongoose';
 import { ImportJob, ImportJobDocument, ImportRowError } from '../schemas/import-job.schema';
 import { ProductService } from '../product.service';
@@ -23,8 +23,8 @@ interface ImportProductJob {
  *   3. create via ProductService.create (fires product.created → translate + embed + index)
  *   4. atomically update the ImportJob progress counters
  */
-@Processor(PRODUCT_IMPORT_QUEUE)
-export class ProductImportProcessor {
+@Processor(PRODUCT_IMPORT_QUEUE, { concurrency: 3 })
+export class ProductImportProcessor extends WorkerHost {
   private readonly logger = new Logger(ProductImportProcessor.name);
 
   constructor(
@@ -32,10 +32,12 @@ export class ProductImportProcessor {
     private readonly ai: ProductAiService,
     private readonly uploads: UploadsService,
     @InjectModel(ImportJob.name) private readonly jobModel: Model<ImportJobDocument>,
-  ) {}
+  ) {
+    super();
+  }
 
-  @Process({ name: IMPORT_PRODUCT_JOB, concurrency: 3 })
-  async handle(job: Job<ImportProductJob>): Promise<void> {
+  async process(job: Job<ImportProductJob>): Promise<void> {
+    if (job.name !== IMPORT_PRODUCT_JOB) return;
     const { jobId, sellerId, product } = job.data;
     try {
       // 1. Rehost images → R2 (retry transient timeouts; keep only successes).

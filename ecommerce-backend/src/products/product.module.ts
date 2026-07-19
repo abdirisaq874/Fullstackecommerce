@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { BullModule } from '@nestjs/bull';
+import { BullModule } from '@nestjs/bullmq';
 import { ProductController, CategoryController, BrandController } from './product.controller';
 import { ProductService } from './product.service';
 import { ProductAiService } from './product-ai.service';

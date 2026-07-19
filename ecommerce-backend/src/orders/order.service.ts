@@ -7,6 +7,8 @@ import { Order, OrderDocument, OrderStatusHistory } from './schemas/order.schema
 import { CartService } from '../cart/cart.service';
 import { EventBusService } from '../shared/events/event-bus.service';
 import { StoresService } from '../stores/stores.service';
+import { OutboxService } from '../outbox/outbox.service';
+import { EmailEventType } from '../shared/events/email-event.enum';
 import { PaginatedResponseDto, PaginationDto } from '../shared/database/pagination.dto';
 import { generateOrderNumber, roundMoney, idsEqual } from '../shared/utils/helpers';
 
@@ -26,6 +28,7 @@ export class OrderService {
     private cartService: CartService,
     private eventBus: EventBusService,
     private stores: StoresService,
+    private outbox: OutboxService,
   ) {}
 
   /**
@@ -131,7 +134,52 @@ export class OrderService {
           },
           { session, aggregateType: 'Order', aggregateId: order._id },
         );
+        // Seller "new order" email — transactional (same session as the order).
+        if (hasStore) {
+          await this.outbox.publish(
+            {
+              eventType: EmailEventType.STORE_ORDER_RECEIVED,
+              aggregateType: 'order',
+              aggregateId: order._id.toString(),
+              payload: {
+                storeId,
+                storeName: group.storeName,
+                orderId: order._id.toString(),
+                orderNumber: order.orderNumber,
+                itemCount: orderItems.reduce((s, i) => s + i.quantity, 0),
+                total: order.total,
+                currency: order.currency,
+              },
+            },
+            { session },
+          );
+        }
         created.push(order);
+      }
+
+      // Buyer "order received" — ONE consolidated email for the whole checkout.
+      const firstId = created[0]?._id.toString();
+      if (firstId) {
+        await this.outbox.publish(
+          {
+            eventType: EmailEventType.ORDER_PLACED,
+            aggregateType: 'checkout',
+            aggregateId: firstId,
+            idempotencyKey: `order.placed:${userId}:${firstId}`,
+            payload: {
+              recipientUserId: userId,
+              orderId: firstId,
+              orders: created.map((o) => ({
+                orderNumber: o.orderNumber,
+                storeName: o.storeName,
+                total: o.total,
+              })),
+              total: roundMoney(created.reduce((s, o) => s + o.total, 0)),
+              currency: created[0].currency,
+            },
+          },
+          { session },
+        );
       }
 
       // Clear cart inside the same transaction to prevent inconsistency.
@@ -283,6 +331,35 @@ export class OrderService {
         quantity: i.quantity,
       })),
     });
+
+    // Buyer status email (best-effort — must never block the status update).
+    const statusEmail: Record<string, EmailEventType> = {
+      confirmed: EmailEventType.ORDER_CONFIRMED,
+      shipped: EmailEventType.ORDER_SHIPPED,
+      delivered: EmailEventType.ORDER_DELIVERED,
+      cancelled: EmailEventType.ORDER_CANCELLED,
+    };
+    const mailEvent = statusEmail[newStatus];
+    if (mailEvent) {
+      try {
+        await this.outbox.publish({
+          eventType: mailEvent,
+          aggregateType: 'order',
+          aggregateId: order._id.toString(),
+          payload: {
+            recipientUserId: order.userId.toString(),
+            orderId: order._id.toString(),
+            orderNumber: order.orderNumber,
+            storeId: order.storeId ? order.storeId.toString() : undefined,
+            storeName: order.storeName,
+            trackingNumber: (order as unknown as { trackingNumber?: string }).trackingNumber,
+            reason,
+          },
+        });
+      } catch (e) {
+        this.logger.warn(`order status email publish failed: ${(e as Error).message}`);
+      }
+    }
 
     return order;
   }

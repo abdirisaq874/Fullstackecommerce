@@ -43,7 +43,7 @@ services:
 
   backend:
     image: us-central1-docker.pkg.dev/suuq-ecommerce/apps/ecommerce-backend:latest
-    environment:
+    environment: &backend_env
       NODE_ENV: production
       PORT: "3000"
       API_PREFIX: api/v1
@@ -98,14 +98,33 @@ services:
       MAIL_PORT: "587"
       MAIL_USER: apikey
       MAIL_PASSWORD: ${MAIL_PASSWORD}
-      MAIL_FROM: noreply@gaarsiiglobal.com
+      MAIL_FROM: Gaarsii <noreply@gaarsiiglobal.com>
       MAIL_FROM_NAME: Suuq
+      # ── Resend (transactional email) ──
+      EMAIL_PROVIDER: resend
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET}
+      MAIL_REPLY_TO: support@gaarsiiglobal.com
+      PLATFORM_NAME: Gaarsii
       STORAGE_PROVIDER: s3
       STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
       STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}
       FRONTEND_URL: "https://shop.gaarsiiglobal.com,https://seller.gaarsiiglobal.com"
       THROTTLE_TTL: "60"
       THROTTLE_LIMIT: "100"
+    networks: [suuq]
+    deploy:
+      replicas: 1
+      update_config: { order: start-first }
+      restart_policy: { condition: any }
+
+  # Dedicated workers process: same image, headless worker entrypoint. Runs the
+  # mail consumer (BullMQ). The API process runs the outbox poller; the worker
+  # must NOT (poller stays single). Shares the backend env (Mongo/Redis/Resend).
+  worker:
+    image: us-central1-docker.pkg.dev/suuq-ecommerce/apps/ecommerce-backend:latest
+    command: ["node", "dist/src/worker.js"]
+    environment: *backend_env
     networks: [suuq]
     deploy:
       replicas: 1

@@ -14,6 +14,8 @@ import * as crypto from 'crypto';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { EventBusService } from '../shared/events/event-bus.service';
 import { RedisService } from '../shared/database/redis.service';
+import { OutboxService } from '../outbox/outbox.service';
+import { EmailEventType } from '../shared/events/email-event.enum';
 import {
   RegisterDto,
   LoginDto,
@@ -82,6 +84,7 @@ export class AuthService {
     private config: ConfigService,
     private eventBus: EventBusService,
     private redis: RedisService,
+    private outbox: OutboxService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthTokens> {
@@ -240,6 +243,19 @@ export class AuthService {
         resetToken, // Send the unhashed token in the email link
         firstName: user.firstName,
       });
+
+      // Password-reset email (best-effort; unique key per request so it always sends).
+      try {
+        await this.outbox.publish({
+          eventType: EmailEventType.AUTH_PASSWORD_RESET,
+          aggregateType: 'user',
+          aggregateId: user._id.toString(),
+          idempotencyKey: `auth.password.reset:${hashedToken}`,
+          payload: { recipientEmail: user.email, name: user.firstName, token: resetToken },
+        });
+      } catch (e) {
+        this.logger.warn(`password-reset email publish failed: ${(e as Error).message}`);
+      }
     }
 
     return { message: 'If that email exists, a reset link has been sent' };
