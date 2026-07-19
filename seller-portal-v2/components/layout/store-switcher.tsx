@@ -78,7 +78,7 @@ export function StoreSwitcher() {
   if (!stores.length) return null;
 
   return (
-    <div ref={ref} className="relative border-t border-stone-200 dark:border-forest-900">
+    <div ref={ref} className="relative shrink-0 border-t border-stone-200 dark:border-forest-900">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

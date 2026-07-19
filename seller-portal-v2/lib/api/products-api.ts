@@ -66,10 +66,15 @@ export interface ListProductsParams {
 export const productsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     listProducts: builder.query<Product[], ListProductsParams | void>({
+      // Seller portal: hit the store-scoped `/products/mine` route. Scope is
+      // enforced SERVER-SIDE from the X-Store-Id header (the active store the
+      // seller is a verified member of) — NOT a client-supplied sellerId. This
+      // is why switching the active store (which resets the RTK cache) refetches
+      // the correct store's products, and why draft/archived stay private.
       query: (params) => {
         const p = params || {};
         return {
-          url: '/products',
+          url: '/products/mine',
           method: 'GET',
           params: {
             page: p.page,
@@ -78,7 +83,6 @@ export const productsApi = baseApi.injectEndpoints({
             // Server-side names: `q` for free-text search, `category` for category id.
             q: p.search,
             category: p.categoryId,
-            sellerId: p.sellerId,
             sortBy: p.sortBy,
             sortOrder: p.sortOrder,
           },
@@ -160,10 +164,8 @@ export const productsApi = baseApi.injectEndpoints({
     }),
 
     /**
-     * TODO(backend): there is no bulk-update endpoint on the products controller
-     * yet. Until one exists, calls to this hook will hit POST /products/bulk-update
-     * and fail with 404. Tracked separately from C1 — keep the hook so consumers
-     * still type-check, but the request is intentionally non-functional.
+     * POST /products/bulk-update — store-scoped (@StoreScoped(STAFF)); updates
+     * status/featured on many products of the active store at once.
      */
     bulkUpdateProducts: builder.mutation<void, { ids: string[]; patch: Partial<Product> }>({
       query: ({ ids, patch }) => ({

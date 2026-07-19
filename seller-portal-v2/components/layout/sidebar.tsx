@@ -121,8 +121,10 @@ export function Sidebar() {
           // Below `lg`: fixed off-canvas drawer that slides in from the left.
           'fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-200 ease-out',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-          // From `lg` up: static, in-flow, no transform — original behavior.
-          'lg:static lg:translate-x-0 lg:w-60 lg:z-auto',
+          // From `lg` up: pin to the viewport (sticky, full height) so the nav
+          // scrolls internally and the store switcher / account footer stay
+          // visible regardless of how long the main content is.
+          'lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:w-60 lg:z-auto',
         )}
         aria-label="Primary navigation"
       >
@@ -147,7 +149,7 @@ export function Sidebar() {
           </button>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto scrollbar-thin">
+        <nav className="flex-1 min-h-0 px-3 py-4 space-y-0.5 overflow-y-auto scrollbar-thin">
           {visibleItems.map(({ href, label, icon: Icon, kind }) => {
             const isActive = pathname === href || pathname?.startsWith(href + '/');
             const badge = kind ? counts[kind] : 0;
@@ -183,7 +185,7 @@ export function Sidebar() {
 
         <Link
           href="/settings"
-          className="px-4 py-3 border-t border-stone-200 dark:border-forest-900 hover:bg-stone-50 dark:hover:bg-forest-900 transition-colors text-left flex items-center gap-2.5"
+          className="shrink-0 px-4 py-3 border-t border-stone-200 dark:border-forest-900 hover:bg-stone-50 dark:hover:bg-forest-900 transition-colors text-left flex items-center gap-2.5"
         >
           <div className="w-8 h-8 rounded-md bg-brand-100 dark:bg-brand-900 grid place-items-center text-xs font-medium text-brand-800 dark:text-brand-100 shrink-0">
             {getSidebarInitials(user?.firstName, user?.lastName, user?.email)}

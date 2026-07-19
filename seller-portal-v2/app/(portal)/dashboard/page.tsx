@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { MetricCard } from '@/components/dashboard/metric-card';
@@ -14,12 +15,35 @@ import {
   useGetDashboardMetricsQuery, useGetWinningProductsQuery, useGetSlidingProductsQuery,
 } from '@/lib/api';
 import { useGetSettingsQuery } from '@/lib/api/seller-settings-api';
+import { useListMyStoresQuery } from '@/lib/api/stores-api';
+import { getActiveStoreId } from '@/lib/api/base-api';
+import { useAppSelector } from '@/lib/api/store';
+import { selectCurrentUser } from '@/lib/store/auth-slice';
 import { formatCurrency } from '@/lib/utils';
+
+function greetingForHour(hour: number): string {
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
 
 export default function DashboardPage() {
   const { data: m, isLoading, isError, refetch } = useGetDashboardMetricsQuery();
   const { data: winners = [] } = useGetWinningProductsQuery();
   const { data: sliders = [] } = useGetSlidingProductsQuery();
+
+  // Real, time-aware greeting: "<time>, <first name>", falling back to the
+  // active store's name, then a neutral word. The hour is read on the client
+  // only (the server has no clock/timezone for the user) to avoid a hydration
+  // mismatch, so we start neutral and refine after mount.
+  const user = useAppSelector(selectCurrentUser);
+  const { data: stores = [] } = useListMyStoresQuery();
+  const activeStore = stores.find((s) => s._id === getActiveStoreId()) ?? stores[0];
+  const greetingName = user?.firstName?.trim() || activeStore?.displayName?.trim() || 'there';
+  const [greeting, setGreeting] = useState('Hello');
+  useEffect(() => {
+    setGreeting(greetingForHour(new Date().getHours()));
+  }, []);
   // Onboarding (H10): show a welcome card on dashboards when the seller
   // hasn't filled in their store profile yet. We treat an empty
   // displayName as the trigger — settings are auto-created on first read,
@@ -33,7 +57,7 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Good morning, Aysel"
+        title={`${greeting}, ${greetingName}`}
         subtitle="Here's how your store is performing today"
         actions={
           <>
