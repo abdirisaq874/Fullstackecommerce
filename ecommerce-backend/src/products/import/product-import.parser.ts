@@ -155,9 +155,9 @@ export function parseImportFile(buffer: Buffer): ParseResult {
         imageUrl: /^https?:\/\//i.test(variantImage) ? variantImage : undefined,
       });
     }
-    if (/^https?:\/\//i.test(variantImage) && !p.imageUrls.includes(variantImage)) {
-      p.imageUrls.push(variantImage);
-    }
+    // NB: a variant image stays on the variant (v.imageUrl) — it is NOT merged
+    // into the product gallery here, so the processor can tag it with the
+    // variant's colour (altText) for per-colour gallery switching.
   });
 
   const products: ParsedProduct[] = [];

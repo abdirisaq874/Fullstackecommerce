@@ -304,6 +304,7 @@ export const baseApi = createApi({
     'Notification',
     'Dashboard',
     'Customer',
+    'Import',
     // Future-phase tags reserved here so endpoint slices in later phases
     // don't have to amend the base.
     'User',

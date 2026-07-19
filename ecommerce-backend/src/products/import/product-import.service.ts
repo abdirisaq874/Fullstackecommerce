@@ -71,4 +71,60 @@ export class ProductImportService {
     if (!job) throw new NotFoundException('Import job not found');
     return job;
   }
+
+  /**
+   * Recent import jobs for a seller. Excludes the heavy `failedItems` payloads —
+   * exposes only their count (`retriableCount`) so the portal can show a
+   * "Retry failed" affordance without shipping every product back.
+   */
+  async listJobs(sellerId: string, limit = 25): Promise<any[]> {
+    return this.jobModel.aggregate([
+      { $match: { sellerId: new Types.ObjectId(sellerId) } },
+      { $sort: { createdAt: -1 } },
+      { $limit: Math.min(limit, 100) },
+      {
+        $project: {
+          filename: 1, status: 1, total: 1, processed: 1, created: 1,
+          failed: 1, skipped: 1, retryOf: 1, createdAt: 1, updatedAt: 1,
+          retriableCount: { $size: { $ifNull: ['$failedItems', []] } },
+          errors: { $slice: [{ $ifNull: ['$errors', []] }, 20] },
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Re-run only the items that failed at the create stage on a prior job. Creates
+   * a fresh job seeded with those payloads and clears them from the original so
+   * they can't be double-run (the original's `failed` count stays as history).
+   */
+  async retryFailed(jobId: string, sellerId: string): Promise<{ jobId: string; total: number }> {
+    if (!Types.ObjectId.isValid(jobId)) throw new NotFoundException('Import job not found');
+    const orig = await this.jobModel.findOne({ _id: jobId, sellerId: new Types.ObjectId(sellerId) });
+    if (!orig) throw new NotFoundException('Import job not found');
+    const items = orig.failedItems || [];
+    if (!items.length) throw new BadRequestException('No failed items to retry.');
+
+    const retry = await this.jobModel.create({
+      sellerId: new Types.ObjectId(sellerId),
+      filename: `Retry · ${orig.filename || 'import'}`,
+      status: 'processing',
+      total: items.length,
+      retryOf: orig._id,
+    });
+    const retryId = retry._id.toString();
+
+    for (const item of items) {
+      await this.queue.add(
+        IMPORT_PRODUCT_JOB,
+        { jobId: retryId, sellerId, product: item.product },
+        { attempts: 2, backoff: { type: 'exponential', delay: 4000 }, removeOnComplete: true, removeOnFail: 500 },
+      );
+    }
+
+    // move the failures onto the retry job — the original is now historical
+    await this.jobModel.updateOne({ _id: orig._id }, { $set: { failedItems: [] } });
+
+    return { jobId: retryId, total: items.length };
+  }
 }

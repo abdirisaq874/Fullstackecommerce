@@ -26,7 +26,9 @@ import { UploadsModule } from '../uploads/uploads.module';
     BullModule.registerQueue({ name: PRODUCT_IMPORT_QUEUE }),
     UploadsModule,
   ],
-  controllers: [ProductController, CategoryController, BrandController, ProductImportController],
+  // ProductImportController first so its specific /products/import* and
+  // /products/imports routes match before ProductController's `:idOrSlug` catch-all.
+  controllers: [ProductImportController, ProductController, CategoryController, BrandController],
   providers: [
     ProductService,
     ProductAiService,

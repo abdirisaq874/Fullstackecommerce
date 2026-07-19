@@ -33,6 +33,16 @@ export class ImportJob {
 
   @Prop({ type: [Object], default: [] })
   errors: ImportRowError[];
+
+  // Full parsed payloads of items that failed at the create stage, so the seller
+  // can re-run just those from the portal. Cleared once retried (moved to a new
+  // job) — `failed` stays as the historical count.
+  @Prop({ type: [Object], default: [] })
+  failedItems: { product: Record<string, any>; message: string }[];
+
+  // Set when this job was created by "retry failed" of another job.
+  @Prop({ type: Types.ObjectId, ref: 'ImportJob' })
+  retryOf?: Types.ObjectId;
 }
 
 export const ImportJobSchema = SchemaFactory.createForClass(ImportJob);

@@ -4,7 +4,7 @@ import { useState, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Plus, Filter, Upload, Download, Archive, Star, StarOff, Search, MoreHorizontal, X, BarChart3 } from 'lucide-react';
+import { Plus, Filter, Upload, Download, Archive, Star, StarOff, Search, MoreHorizontal, X, BarChart3, History } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/primitives/card';
 import { Button } from '@/components/primitives/button';
@@ -231,6 +231,7 @@ export default function ProductsPage() {
         actions={
           <>
             <Button onClick={() => setCsvOpen(true)}><Upload className="w-3.5 h-3.5" /> Bulk import</Button>
+            <Button onClick={() => router.push('/products/imports')}><History className="w-3.5 h-3.5" /> Import history</Button>
             <Button onClick={exportCsv}><Download className="w-3.5 h-3.5" /> Export</Button>
             <Button variant="primary" onClick={() => router.push('/products/new')}>
               <Plus className="w-3.5 h-3.5" /> Add product

@@ -38,13 +38,33 @@ export class ProductImportProcessor {
   async handle(job: Job<ImportProductJob>): Promise<void> {
     const { jobId, sellerId, product } = job.data;
     try {
-      // 1. Rehost images → R2 (retry transient timeouts; keep only successes)
-      const rehosted: string[] = [];
+      // 1. Rehost images → R2 (retry transient timeouts; keep only successes).
+      //    Tag each image with the COLOUR it belongs to (altText = colour value)
+      //    so the storefront can switch the gallery per colour; product-level
+      //    images fall back to the product name. De-dupe by source URL.
+      const colorOf = (opts: { name: string; value: string }[] | undefined) =>
+        opts?.find((o) => /^(colou?r|renk)$/i.test(o.name))?.value;
+      const specs: { url: string; altText: string }[] = [];
+      const seen = new Set<string>();
       for (const url of product.imageUrls) {
+        if (url && !seen.has(url)) {
+          seen.add(url);
+          specs.push({ url, altText: product.name });
+        }
+      }
+      for (const v of product.variants) {
+        if (v.imageUrl && !seen.has(v.imageUrl)) {
+          seen.add(v.imageUrl);
+          specs.push({ url: v.imageUrl, altText: colorOf(v.options) || product.name });
+        }
+      }
+      const images: { url: string; altText: string; isPrimary: boolean; sortOrder: number }[] = [];
+      for (const spec of specs) {
         try {
-          rehosted.push(await this.retry(() => this.uploads.putRemoteImage(url, 'product')));
+          const url = await this.retry(() => this.uploads.putRemoteImage(spec.url, 'product'));
+          images.push({ url, altText: spec.altText, isPrimary: images.length === 0, sortOrder: images.length });
         } catch (e) {
-          this.logger.warn(`image rehost failed (${url}): ${(e as Error).message}`);
+          this.logger.warn(`image rehost failed (${spec.url}): ${(e as Error).message}`);
         }
       }
 
@@ -54,18 +74,12 @@ export class ProductImportProcessor {
           name: product.name,
           brand: product.brand,
           attributes: product.attributes,
-          imageUrl: rehosted[0],
+          imageUrl: images[0]?.url,
         }),
       );
       if (!draft.categoryId) throw new Error('AI could not assign a category');
 
       // 3. Build the product payload
-      const images = rehosted.map((url, i) => ({
-        url,
-        altText: product.name,
-        isPrimary: i === 0,
-        sortOrder: i,
-      }));
       const variants = product.variants.map((v, i) => ({
         sku: v.sku || `${product.handle}-${i + 1}`.toUpperCase().slice(0, 40),
         name: v.name,
@@ -104,10 +118,13 @@ export class ProductImportProcessor {
 
       await this.bump(jobId, { created: 1 });
     } catch (e) {
-      this.logger.warn(`import failed for "${product.name}": ${(e as Error).message}`);
+      const message = (e as Error).message;
+      this.logger.warn(`import failed for "${product.name}": ${message}`);
       await this.bump(jobId, {
         failed: 1,
-        error: { handle: product.handle, name: product.name, stage: 'create', message: (e as Error).message },
+        error: { handle: product.handle, name: product.name, stage: 'create', message },
+        // keep the full payload so the seller can retry just this item
+        failedItem: { product, message },
       });
     }
   }
@@ -129,13 +146,21 @@ export class ProductImportProcessor {
   /** Atomically advance the progress counters and flip status when done. */
   private async bump(
     jobId: string,
-    opts: { created?: number; failed?: number; error?: ImportRowError },
+    opts: {
+      created?: number;
+      failed?: number;
+      error?: ImportRowError;
+      failedItem?: { product: ParsedProduct; message: string };
+    },
   ): Promise<void> {
     const inc: Record<string, number> = { processed: 1 };
     if (opts.created) inc.created = opts.created;
     if (opts.failed) inc.failed = opts.failed;
     const update: Record<string, any> = { $inc: inc };
-    if (opts.error) update.$push = { errors: { $each: [opts.error], $slice: -200 } };
+    const push: Record<string, any> = {};
+    if (opts.error) push.errors = { $each: [opts.error], $slice: -200 };
+    if (opts.failedItem) push.failedItems = { $each: [opts.failedItem], $slice: -1000 };
+    if (Object.keys(push).length) update.$push = push;
 
     const doc = await this.jobModel.findByIdAndUpdate(jobId, update, { new: true });
     if (doc && doc.processed >= doc.total && doc.status === 'processing') {

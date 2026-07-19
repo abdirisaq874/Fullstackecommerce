@@ -35,10 +35,24 @@ export class ProductImportController {
     );
   }
 
+  @Get('imports')
+  @Auth('admin', 'seller')
+  @ApiOperation({ summary: 'List my recent bulk-import jobs' })
+  async list(@CurrentUser('_id') userId: string) {
+    return this.importService.listJobs(userId);
+  }
+
   @Get('import/:jobId')
   @Auth('admin', 'seller')
   @ApiOperation({ summary: 'Get bulk-import job progress' })
   async status(@Param('jobId') jobId: string, @CurrentUser('_id') userId: string) {
     return this.importService.getJob(jobId, userId);
+  }
+
+  @Post('import/:jobId/retry')
+  @Auth('admin', 'seller')
+  @ApiOperation({ summary: 'Re-run the failed items of a prior import as a new job' })
+  async retry(@Param('jobId') jobId: string, @CurrentUser('_id') userId: string) {
+    return this.importService.retryFailed(jobId, userId);
   }
 }

@@ -46,6 +46,10 @@ export interface ImportJob {
   filename?: string;
   createdAt?: string;
   updatedAt?: string;
+  /** number of create-stage failures still available to retry (list view only) */
+  retriableCount?: number;
+  /** set when this job was created by retrying another job's failures */
+  retryOf?: string;
 }
 
 export interface ListProductsParams {
@@ -199,6 +203,21 @@ export const productsApi = baseApi.injectEndpoints({
     getImportJob: builder.query<ImportJob, string>({
       query: (jobId) => ({ url: `/products/import/${jobId}`, method: 'GET' }),
       transformResponse: (res: ResponseEnvelope<ImportJob> | ImportJob) => unwrapEnvelope<ImportJob>(res),
+      providesTags: (_r, _e, jobId) => [{ type: 'Import', id: jobId }],
+    }),
+
+    // Recent import jobs for the signed-in seller (history view).
+    listImports: builder.query<ImportJob[], void>({
+      query: () => ({ url: '/products/imports', method: 'GET' }),
+      transformResponse: (res: ResponseEnvelope<ImportJob[]> | ImportJob[]) => unwrapEnvelope<ImportJob[]>(res) ?? [],
+      providesTags: [{ type: 'Import', id: 'LIST' }],
+    }),
+
+    // Re-run only the failed items of a prior import — returns a new jobId to poll.
+    retryImport: builder.mutation<{ jobId: string; total: number }, string>({
+      query: (jobId) => ({ url: `/products/import/${jobId}/retry`, method: 'POST' }),
+      transformResponse: (res: ResponseEnvelope<{ jobId: string; total: number }> | { jobId: string; total: number }) => unwrapEnvelope(res),
+      invalidatesTags: [{ type: 'Import', id: 'LIST' }, { type: 'Product', id: 'LIST' }],
     }),
   }),
 });
@@ -214,4 +233,6 @@ export const {
   useBulkCreateProductsMutation,
   useImportProductsMutation,
   useGetImportJobQuery,
+  useListImportsQuery,
+  useRetryImportMutation,
 } = productsApi;
