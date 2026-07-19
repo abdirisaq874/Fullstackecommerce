@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { createHash } from 'crypto';
 import { Client } from '@opensearch-project/opensearch';
 
@@ -77,7 +77,7 @@ export class IndexingService {
 
     let indexed = 0;
     const filter: Record<string, any> = { status: 'active', isDeleted: { $ne: true } };
-    if (opts.sellerId) filter.sellerId = opts.sellerId; // Mongoose casts the string to ObjectId
+    if (opts.sellerId) filter.sellerId = new Types.ObjectId(opts.sellerId);
     const cursor = this.productModel.find(filter).cursor();
 
     for await (const product of cursor) {
