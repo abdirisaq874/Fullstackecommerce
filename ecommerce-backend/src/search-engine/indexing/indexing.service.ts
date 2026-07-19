@@ -76,8 +76,11 @@ export class IndexingService {
     else await this.indexAdmin.ensureIndex();
 
     let indexed = 0;
-    const filter: Record<string, any> = { status: 'active', isDeleted: { $ne: true } };
+    // Scoped (per-seller) reindex processes ALL statuses so indexProduct can
+    // remove archived/draft from the index; the full reindex stays active-only.
+    const filter: Record<string, any> = { isDeleted: { $ne: true } };
     if (opts.sellerId) filter.sellerId = new Types.ObjectId(opts.sellerId);
+    else filter.status = 'active';
     const cursor = this.productModel.find(filter).cursor();
 
     for await (const product of cursor) {
