@@ -57,6 +57,21 @@ import { env } from '@/lib/config/env';
  */
 const ACCESS_TOKEN_KEY = 'sellerPortal.accessToken';
 const REFRESH_TOKEN_KEY = 'sellerPortal.refreshToken';
+const ACTIVE_STORE_KEY = 'sellerPortal.activeStoreId';
+
+/** Active store id the seller is acting as; sent as X-Store-Id on every request. */
+export function getActiveStoreId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(ACTIVE_STORE_KEY);
+}
+export function setActiveStoreId(storeId: string): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(ACTIVE_STORE_KEY, storeId);
+}
+export function clearActiveStoreId(): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(ACTIVE_STORE_KEY);
+}
 
 function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -78,6 +93,7 @@ function clearTokens(): void {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(ACCESS_TOKEN_KEY);
   window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+  window.localStorage.removeItem(ACTIVE_STORE_KEY); // drop store context on logout/refresh-failure
 }
 
 /**
@@ -141,6 +157,11 @@ const rawBaseQuery = fetchBaseQuery({
     const token = getAccessToken();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
+    }
+    // Active store the seller is acting as → backend scopes seller endpoints to it.
+    const storeId = getActiveStoreId();
+    if (storeId) {
+      headers.set('X-Store-Id', storeId);
     }
     headers.set('X-Request-Id', requestId());
     return headers;
@@ -244,8 +265,11 @@ async function performRefresh(
       refreshResult.data as ResponseEnvelope<RefreshTokens> | RefreshTokens,
     );
     setTokens(tokens.accessToken, tokens.refreshToken);
-    // TODO(phase-2b): once `lib/store/auth-slice.ts` exists, also dispatch
-    //   api.dispatch({ type: 'auth/setCredentials', payload: tokens });
+    // Keep Redux in sync with the freshly-rotated tokens so components (e.g. the
+    // Topbar logout, which posts state.auth.refreshToken) don't hold the old,
+    // already-rotated token. Dispatched by string type to avoid a circular
+    // import between base-api and the auth slice.
+    api.dispatch({ type: 'auth/tokenRefreshed', payload: tokens });
     return tokens.accessToken;
   }
   return null;
@@ -305,6 +329,8 @@ export const baseApi = createApi({
     'Dashboard',
     'Customer',
     'Import',
+    'Store',
+    'StoreMember',
     // Future-phase tags reserved here so endpoint slices in later phases
     // don't have to amend the base.
     'User',

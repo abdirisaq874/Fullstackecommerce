@@ -17,6 +17,7 @@ import './notifications-api';
 import './seller-settings-api';
 import './finance-api';
 import './coupons-api';
+import './stores-api';
 
 export const store = configureStore({
   reducer: {
