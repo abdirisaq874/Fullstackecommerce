@@ -14,6 +14,7 @@ import {
   Product, ProductSchema, Category, CategorySchema, Brand, BrandSchema,
 } from './schemas/product.schema';
 import { UploadsModule } from '../uploads/uploads.module';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { UploadsModule } from '../uploads/uploads.module';
     ]),
     BullModule.registerQueue({ name: PRODUCT_IMPORT_QUEUE }),
     UploadsModule,
+    StoresModule,
   ],
   // ProductImportController first so its specific /products/import* and
   // /products/imports routes match before ProductController's `:idOrSlug` catch-all.

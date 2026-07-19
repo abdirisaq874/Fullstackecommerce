@@ -257,12 +257,11 @@ export class ProductService {
     actorId: string,
     role?: string,
   ): Promise<{ matched: number; modified: number }> {
-    // DEV: seller scoping is intentionally OFF for now — any account can manage
-    // all products. Re-enable later by adding the owner filter for non-admins:
-    //   ...(role === 'admin' ? {} : { sellerId: new Types.ObjectId(actorId) })
-    void role;
+    // Store-scoped: non-admins can only touch products of the active store
+    // (`actorId` is the active store id); admins can touch any.
     const filter: FilterQuery<Product> = {
       _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+      ...(role === 'admin' ? {} : { sellerId: new Types.ObjectId(actorId) }),
     };
 
     const result = await this.productModel.updateMany(filter, { $set: patch });

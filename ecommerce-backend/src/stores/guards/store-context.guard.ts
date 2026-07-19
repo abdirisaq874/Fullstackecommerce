@@ -1,7 +1,10 @@
 import {
   Injectable, CanActivate, ExecutionContext, SetMetadata, createParamDecorator, ForbiddenException,
+  UseGuards, applyDecorators,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard, RolesGuard, Roles } from '../../auth/guards/auth.guards';
 import { StoresService, ActiveStoreContext } from '../stores.service';
 import { StoreRole } from '../schemas/store-membership.schema';
 
@@ -58,4 +61,20 @@ export class StoreContextGuard implements CanActivate {
     req.storeContext = context;
     return true;
   }
+}
+
+/**
+ * Composite for seller endpoints that operate on the ACTIVE store: authenticates
+ * (JWT), requires the global seller/admin role, resolves + verifies the active
+ * store (X-Store-Id → live membership), and enforces an optional minimum store
+ * role. Guard order is guaranteed: JwtAuthGuard → RolesGuard → StoreContextGuard.
+ * Inject the resolved store with `@ActiveStore('storeId')`.
+ */
+export function StoreScoped(...storeRoles: StoreRole[]) {
+  return applyDecorators(
+    UseGuards(JwtAuthGuard, RolesGuard, StoreContextGuard),
+    Roles('admin', 'seller'),
+    StoreRoles(...storeRoles),
+    ApiBearerAuth(),
+  );
 }

@@ -5,6 +5,8 @@ import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { ProductAiService } from './product-ai.service';
 import { Auth, CurrentUser } from '../auth/guards/auth.guards';
+import { StoreScoped, ActiveStore } from '../stores/guards/store-context.guard';
+import { StoreRole } from '../stores/schemas/store-membership.schema';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import {
   CreateProductDto, UpdateProductDto, ProductQueryDto,
@@ -54,57 +56,57 @@ export class ProductController {
   }
 
   @Post()
-  @Auth('admin', 'seller')
-  @ApiOperation({ summary: 'Create a product' })
+  @StoreScoped(StoreRole.STAFF)
+  @ApiOperation({ summary: 'Create a product in the active store' })
   async create(
     @Body() dto: CreateProductDto,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
   ) {
-    return this.productService.create(dto, userId);
+    return this.productService.create(dto, storeId);
   }
 
   @Post('bulk-update')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Update many products at once (status / featured)' })
   async bulkUpdate(
     @Body() dto: BulkUpdateProductsDto,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.productService.bulkUpdate(dto.ids, dto.patch, userId, role);
+    return this.productService.bulkUpdate(dto.ids, dto.patch, storeId, role);
   }
 
   @Post('bulk-create')
-  @Auth('admin', 'seller')
+  @StoreScoped(StoreRole.STAFF)
   @ApiOperation({ summary: 'Create many products in one request (bulk import)' })
   async bulkCreate(
     @Body() dto: BulkCreateProductsDto,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
   ) {
-    return this.productService.bulkCreate(dto.products, userId);
+    return this.productService.bulkCreate(dto.products, storeId);
   }
 
   @Patch(':id')
-  @Auth('admin', 'seller')
-  @ApiOperation({ summary: 'Update a product' })
+  @StoreScoped(StoreRole.STAFF)
+  @ApiOperation({ summary: 'Update a product in the active store' })
   async update(
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateProductDto,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.productService.update(id, dto, userId, role);
+    return this.productService.update(id, dto, storeId, role);
   }
 
   @Delete(':id')
-  @Auth('admin', 'seller')
-  @ApiOperation({ summary: 'Archive a product' })
+  @StoreScoped(StoreRole.STAFF)
+  @ApiOperation({ summary: 'Archive a product in the active store' })
   async archive(
     @Param('id', ParseObjectIdPipe) id: string,
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @CurrentUser('role') role: string,
   ) {
-    return this.productService.archive(id, userId, role);
+    return this.productService.archive(id, storeId, role);
   }
 }
 
