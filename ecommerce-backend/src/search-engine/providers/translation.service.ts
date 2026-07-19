@@ -2,6 +2,25 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { postJson } from './http.util';
 
+// Serialize + space out translation calls to stay under the provider's
+// requests-per-minute limit (free Gemini tiers are ~10-15 RPM). Tunable via env.
+const MIN_INTERVAL_MS = Number(process.env.TRANSLATION_MIN_INTERVAL_MS || 5000);
+const MAX_RETRIES = Number(process.env.TRANSLATION_MAX_RETRIES || 3);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+let translationGate: Promise<void> = Promise.resolve();
+/** Run fn after the previous call, then hold the gate MIN_INTERVAL_MS to pace RPM. */
+async function paced<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = translationGate;
+  let release!: () => void;
+  translationGate = new Promise<void>((r) => (release = r));
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    setTimeout(release, MIN_INTERVAL_MS);
+  }
+}
+
 /**
  * Translation for backfilling missing product locales at index time. Provider /
  * model / enable-flag come from the `translation` config namespace, so switching
@@ -87,32 +106,44 @@ export class TranslationService {
       `Return ONLY a JSON object with the SAME keys and the translated values.\n\n` +
       JSON.stringify(input);
 
-    try {
-      const res = await postJson<any>(
-        `${c.baseUrl}/chat/completions`,
-        {
-          model: c.model,
-          temperature: 0.2,
-          messages: [
-            { role: 'system', content: this.systemPrompt },
-            { role: 'user', content: user },
-          ],
-        },
-        { Authorization: `Bearer ${c.apiKey}` },
-      );
-      const content: string = res?.choices?.[0]?.message?.content ?? '';
-      const parsed = this.parseJson(content);
-      if (!parsed) return null;
-      const out: Record<string, string> = {};
-      for (const key of Object.keys(input)) {
-        const v = parsed[key];
-        if (typeof v === 'string' && v.trim()) out[key] = v.trim();
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      try {
+        const content = await paced(async () => {
+          const res = await postJson<any>(
+            `${c.baseUrl}/chat/completions`,
+            {
+              model: c.model,
+              temperature: 0.2,
+              messages: [
+                { role: 'system', content: this.systemPrompt },
+                { role: 'user', content: user },
+              ],
+            },
+            { Authorization: `Bearer ${c.apiKey}` },
+          );
+          return (res?.choices?.[0]?.message?.content ?? '') as string;
+        });
+        const parsed = this.parseJson(content);
+        if (!parsed) return null;
+        const out: Record<string, string> = {};
+        for (const key of Object.keys(input)) {
+          const v = parsed[key];
+          if (typeof v === 'string' && v.trim()) out[key] = v.trim();
+        }
+        return Object.keys(out).length ? out : null;
+      } catch (err) {
+        const msg = (err as Error).message || '';
+        const rateLimited = msg.includes('429');
+        // Rate-limited → wait ~a full window and retry; transient 5xx → short backoff.
+        if (attempt < MAX_RETRIES && (rateLimited || /\b5\d\d\b/.test(msg))) {
+          await sleep(rateLimited ? 30000 : 2000 * (attempt + 1));
+          continue;
+        }
+        this.logger.warn(`Translation ${from}->${to} failed: ${msg}`);
+        return null;
       }
-      return Object.keys(out).length ? out : null;
-    } catch (err) {
-      this.logger.warn(`Translation ${from}->${to} failed: ${(err as Error).message}`);
-      return null;
     }
+    return null;
   }
 
   /** Translate a single string (convenience wrapper over translateFields). */
