@@ -12,13 +12,14 @@ import { IndexingService } from '../search-engine/indexing/indexing.service';
 
 async function main() {
   const recreate = process.argv.includes('--recreate');
+  const sellerId = process.env.SELLER_ID || undefined; // optional: scope to one seller
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
   const indexing = app.get(IndexingService);
 
-  console.log(`Reindexing products${recreate ? ' (recreate index)' : ''}…`);
-  const { indexed } = await indexing.reindexAll({ recreate });
+  console.log(`Reindexing products${sellerId ? ` (seller ${sellerId})` : ''}${recreate ? ' (recreate index)' : ''}…`);
+  const { indexed } = await indexing.reindexAll({ recreate, sellerId });
   console.log(`✅ Reindex complete: ${indexed} products indexed.`);
 
   await app.close();

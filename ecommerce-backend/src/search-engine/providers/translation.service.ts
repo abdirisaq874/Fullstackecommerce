@@ -134,8 +134,9 @@ export class TranslationService {
       } catch (err) {
         const msg = (err as Error).message || '';
         const rateLimited = msg.includes('429');
-        // Rate-limited → wait ~a full window and retry; transient 5xx → short backoff.
-        if (attempt < MAX_RETRIES && (rateLimited || /\b5\d\d\b/.test(msg))) {
+        const perDay = /PerDay/i.test(msg); // daily cap — retrying won't help, skip fast
+        // Per-minute rate limit → wait ~a full window and retry; transient 5xx → short backoff.
+        if (!perDay && attempt < MAX_RETRIES && (rateLimited || /\b5\d\d\b/.test(msg))) {
           await sleep(rateLimited ? 30000 : 2000 * (attempt + 1));
           continue;
         }

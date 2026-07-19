@@ -71,14 +71,14 @@ export class IndexingService {
   }
 
   /** Full rebuild — used by the reindex CLI. */
-  async reindexAll(opts: { recreate?: boolean } = {}): Promise<{ indexed: number }> {
+  async reindexAll(opts: { recreate?: boolean; sellerId?: string } = {}): Promise<{ indexed: number }> {
     if (opts.recreate) await this.indexAdmin.recreateIndex();
     else await this.indexAdmin.ensureIndex();
 
     let indexed = 0;
-    const cursor = this.productModel
-      .find({ status: 'active', isDeleted: { $ne: true } })
-      .cursor();
+    const filter: Record<string, any> = { status: 'active', isDeleted: { $ne: true } };
+    if (opts.sellerId) filter.sellerId = opts.sellerId; // Mongoose casts the string to ObjectId
+    const cursor = this.productModel.find(filter).cursor();
 
     for await (const product of cursor) {
       try {
