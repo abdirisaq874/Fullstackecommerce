@@ -83,7 +83,7 @@ services:
       TRANSLATION_ENABLED: "1"
       TRANSLATION_PROVIDER: gemini
       GEMINI_BASE_URL: https://generativelanguage.googleapis.com/v1beta/openai
-      GEMINI_TRANSLATION_MODEL: gemini-2.5-flash
+      GEMINI_TRANSLATION_MODEL: gemini-3.5-flash
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       # Cloudflare R2 (S3-compatible) — product image uploads
       R2_ENDPOINT: https://c6afd8d77de48b568e4432620c142398.r2.cloudflarestorage.com
