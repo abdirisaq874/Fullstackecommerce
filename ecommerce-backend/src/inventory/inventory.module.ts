@@ -8,6 +8,8 @@ import {
   InventoryMovement, InventoryMovementSchema,
   Warehouse, WarehouseSchema,
 } from './schemas/inventory.schema';
+import { Product, ProductSchema } from '../products/schemas/product.schema';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   imports: [
@@ -15,7 +17,9 @@ import {
       { name: Inventory.name, schema: InventorySchema },
       { name: InventoryMovement.name, schema: InventoryMovementSchema },
       { name: Warehouse.name, schema: WarehouseSchema },
+      { name: Product.name, schema: ProductSchema },
     ]),
+    StoresModule,
   ],
   controllers: [InventoryController],
   providers: [InventoryService, InventoryEventsListener],

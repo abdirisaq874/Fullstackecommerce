@@ -1,7 +1,8 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Inventory, InventoryMovement } from './schemas/inventory.schema';
+import { Product } from '../products/schemas/product.schema';
 import { EventBusService } from '../shared/events/event-bus.service';
 
 export interface ReserveItem {
@@ -17,6 +18,7 @@ export class InventoryService {
   constructor(
     @InjectModel(Inventory.name) private inventoryModel: Model<Inventory>,
     @InjectModel(InventoryMovement.name) private movementModel: Model<InventoryMovement>,
+    @InjectModel(Product.name) private productModel: Model<Product>,
     private eventBus: EventBusService,
   ) {}
 
@@ -202,7 +204,14 @@ export class InventoryService {
     return inv!;
   }
 
-  async getStockLevels(productId: string): Promise<Inventory[]> {
+  async getStockLevels(productId: string, storeId?: string): Promise<Inventory[]> {
+    // When scoped to a store (seller call), the product must belong to it.
+    if (storeId) {
+      const product = await this.productModel.findById(productId).select('sellerId').lean();
+      if (!product || String((product as any).sellerId) !== String(storeId)) {
+        throw new NotFoundException('Product not found in this store');
+      }
+    }
     return this.inventoryModel.find({
       productId: new Types.ObjectId(productId),
     });
