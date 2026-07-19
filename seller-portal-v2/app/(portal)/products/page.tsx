@@ -12,10 +12,10 @@ import { Badge } from '@/components/primitives/badge';
 import { Field, Input, Select } from '@/components/primitives/field';
 import { ResponsiveTable, type ResponsiveColumn } from '@/components/data/responsive-table';
 import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
-import { CsvImportModal } from '@/components/product/csv-import-modal';
+import { BulkImportModal } from '@/components/product/bulk-import-modal';
 import { ConfirmDialog } from '@/components/primitives/confirm-dialog';
 import { Money } from '@/components/shared/format';
-import { useListProductsQuery, useBulkUpdateProductsMutation, useArchiveProductMutation, useBulkCreateProductsMutation, useGetCategoriesQuery, useGetBrandsQuery } from '@/lib/api';
+import { useListProductsQuery, useBulkUpdateProductsMutation, useArchiveProductMutation } from '@/lib/api';
 import { useAppSelector } from '@/lib/api/store';
 import { useToast } from '@/lib/hooks/use-toast';
 import { productDisplayStatus, toCSV, downloadCSV } from '@/lib/utils';
@@ -46,9 +46,6 @@ export default function ProductsPage() {
   const refetch = () => { activeQ.refetch(); draftQ.refetch(); archivedQ.refetch(); };
   const [bulkUpdate, { isLoading: bulking }] = useBulkUpdateProductsMutation();
   const [archive] = useArchiveProductMutation();
-  const [bulkCreateProducts] = useBulkCreateProductsMutation();
-  const { data: categories = [] } = useGetCategoriesQuery();
-  const { data: brands = [] } = useGetBrandsQuery();
   const toast = useToast();
 
   const [search, setSearch] = useState('');
@@ -154,43 +151,6 @@ export default function ProductsPage() {
     toast.success(`Exported ${rows.length} products`);
   };
 
-  const handleImport = async (rows: Record<string, string>[]) => {
-    // Resolve CSV category/brand NAMES to real Mongo ObjectIds (case-insensitive).
-    const catByName = new Map(categories.map((c) => [c.name.toLowerCase().trim(), c._id]));
-    const brandByName = new Map(brands.map((b) => [b.name.toLowerCase().trim(), b._id]));
-    const valid = rows.filter((r) => r.name && r.basePrice);
-    const products = valid.map((r) => ({
-      name: r.name,
-      basePrice: Number(r.basePrice),
-      compareAtPrice: r.compareAtPrice ? Number(r.compareAtPrice) : undefined,
-      categoryId: r.categoryName ? catByName.get(r.categoryName.toLowerCase().trim()) : undefined,
-      brandId: r.brandName ? brandByName.get(r.brandName.toLowerCase().trim()) : undefined,
-      shortDescription: r.shortDescription || undefined,
-      description: r.description || undefined,
-      stock: r.stockOnHand ? Number(r.stockOnHand) || 0 : undefined,
-      // Image column → one or more images (pipe-separated url1|url2|url3); first is primary.
-      images: r.imageUrl
-        ? r.imageUrl.split('|').map((u) => u.trim()).filter(Boolean)
-            .map((url, idx) => ({ url, altText: r.name, isPrimary: idx === 0, sortOrder: idx }))
-        : undefined,
-      status: 'draft' as const,
-    }));
-    // One request per ~100 products — a large import (e.g. 400) stays well under
-    // the backend's global rate limit (vs. one request per row).
-    let created = 0, failed = rows.length - products.length;
-    const CHUNK = 100;
-    for (let i = 0; i < products.length; i += CHUNK) {
-      const batch = products.slice(i, i + CHUNK);
-      try {
-        const res = await bulkCreateProducts({ products: batch }).unwrap();
-        created += res.created; failed += res.failed;
-      } catch {
-        failed += batch.length;
-      }
-    }
-    if (created) toast.success(`Imported ${created} product${created === 1 ? '' : 's'} as drafts${failed ? ` · ${failed} failed/skipped` : ''}`);
-    else         toast.error(`Import failed — 0 of ${rows.length} products created`);
-  };
 
   const columns: ResponsiveColumn<Product>[] = [
     {
@@ -270,7 +230,7 @@ export default function ProductsPage() {
         subtitle={`${products.length} total · ${statusCounts.active} active`}
         actions={
           <>
-            <Button onClick={() => setCsvOpen(true)}><Upload className="w-3.5 h-3.5" /> Import CSV</Button>
+            <Button onClick={() => setCsvOpen(true)}><Upload className="w-3.5 h-3.5" /> Bulk import</Button>
             <Button onClick={exportCsv}><Download className="w-3.5 h-3.5" /> Export</Button>
             <Button variant="primary" onClick={() => router.push('/products/new')}>
               <Plus className="w-3.5 h-3.5" /> Add product
@@ -366,7 +326,7 @@ export default function ProductsPage() {
         )}
       </Card>
 
-      <CsvImportModal open={csvOpen} onClose={() => setCsvOpen(false)} onImport={handleImport} />
+      <BulkImportModal open={csvOpen} onClose={() => setCsvOpen(false)} onDone={refetch} />
 
       <ConfirmDialog
         open={!!pendingConfirm}

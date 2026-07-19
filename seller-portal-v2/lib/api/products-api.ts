@@ -26,6 +26,28 @@ export interface AiDraftResult {
   categoryPath: string;
 }
 
+/** One skipped/failed row in a bulk import. */
+export interface ImportRowError {
+  handle?: string;
+  name?: string;
+  stage?: string;
+  message: string;
+}
+/** Live status of a bulk product-import job (GET /products/import/:jobId). */
+export interface ImportJob {
+  _id: string;
+  status: 'processing' | 'completed' | 'failed';
+  total: number;
+  processed: number;
+  created: number;
+  failed: number;
+  skipped: number;
+  errors: ImportRowError[];
+  filename?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ListProductsParams {
   page?: number;
   limit?: number;
@@ -161,6 +183,23 @@ export const productsApi = baseApi.injectEndpoints({
         unwrapEnvelope(res),
       invalidatesTags: [{ type: 'Product', id: 'LIST' }, { type: 'Inventory', id: 'LIST' }, { type: 'Dashboard', id: 'METRICS' }],
     }),
+
+    // Bulk import from a CSV/XLSX file — uploads the raw file (multipart); the
+    // backend parses, rehosts images to R2, AI-drafts copy+category, creates each
+    // product, and tracks progress. Returns a jobId to poll.
+    importProducts: builder.mutation<{ jobId: string; total: number; skipped: number }, FormData>({
+      query: (formData) => ({ url: '/products/import', method: 'POST', body: formData }),
+      transformResponse: (
+        res: ResponseEnvelope<{ jobId: string; total: number; skipped: number }> | { jobId: string; total: number; skipped: number },
+      ) => unwrapEnvelope(res),
+    }),
+
+    // Poll bulk-import progress. Call the hook with { pollingInterval } and stop
+    // (skip) once status is 'completed' | 'failed'.
+    getImportJob: builder.query<ImportJob, string>({
+      query: (jobId) => ({ url: `/products/import/${jobId}`, method: 'GET' }),
+      transformResponse: (res: ResponseEnvelope<ImportJob> | ImportJob) => unwrapEnvelope<ImportJob>(res),
+    }),
   }),
 });
 
@@ -173,4 +212,6 @@ export const {
   useArchiveProductMutation,
   useBulkUpdateProductsMutation,
   useBulkCreateProductsMutation,
+  useImportProductsMutation,
+  useGetImportJobQuery,
 } = productsApi;

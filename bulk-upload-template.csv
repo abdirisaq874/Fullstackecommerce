@@ -1,0 +1,5 @@
+handle,name,brand,basePrice,compareAtPrice,currency,stock,status,imageUrls,variantImageUrl,sourceUrl,attributes,variantSku,option1Name,option1Value,option2Name,option2Value,variantPrice,variantBarcode,variantWeightGrams
+gsoemon-anc-earbuds,Gsoemon Wireless Earbuds with Active Noise Cancelling,Gsoemon,39.99,54.99,USD,120,active,https://source-cdn.example.com/earbuds-black-front.jpg|https://source-cdn.example.com/earbuds-case.jpg,,https://www.amazon.com/dp/B09K67QXKT,Battery Life:30h|Waterproof:IPX8|Connectivity:Bluetooth 5.3,,,,,,,,
+classic-cotton-tee,Classic Cotton Crew Tee,Gaarsii Basics,19.99,,USD,300,active,https://source-cdn.example.com/tee-black.jpg,https://source-cdn.example.com/tee-black.jpg,https://supplier.example.com/products/classic-tee,Material:100% Cotton|Fit:Regular,TEE-BLK-S,Color,Black,Size,S,,,180
+classic-cotton-tee,,,,,,,,,https://source-cdn.example.com/tee-white.jpg,,,TEE-WHT-M,Color,White,Size,M,,,185
+classic-cotton-tee,,,,,,,,,https://source-cdn.example.com/tee-blue.jpg,,,TEE-BLU-L,Color,Blue,Size,L,21.99,,190

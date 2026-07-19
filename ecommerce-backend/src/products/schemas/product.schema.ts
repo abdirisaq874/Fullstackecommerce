@@ -173,6 +173,16 @@ export class Product {
   @Prop({ type: Object, default: {} })
   searchSignals: { popularity?: number; salesVelocity?: number; lastOrderedAt?: Date };
 
+  // ─── Import provenance (source URL, batch) — hidden from ALL API responses.
+  //    select:false so it never leaks to public or seller clients. ───
+  @Prop({ type: Object, select: false })
+  importMeta?: {
+    sourceUrl?: string;
+    source?: string;
+    batchId?: string;
+    importedAt?: Date;
+  };
+
   @Prop({ default: false }) isDeleted: boolean;
   @Prop() deletedAt?: Date;
 }

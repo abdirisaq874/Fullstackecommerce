@@ -23,11 +23,16 @@ export class ProductService {
   // PRODUCTS
   // ═══════════════════════════════════════════
 
-  async create(dto: CreateProductDto, sellerId: string): Promise<ProductDocument> {
+  async create(
+    dto: CreateProductDto,
+    sellerId: string,
+    extra?: Record<string, any>,
+  ): Promise<ProductDocument> {
     const slug = await this.generateProductSlug(dto.name);
 
     const product = await this.productModel.create({
       ...dto,
+      ...(extra || {}),
       slug,
       sellerId: new Types.ObjectId(sellerId),
       categoryId: dto.categoryId ? new Types.ObjectId(dto.categoryId) : undefined,

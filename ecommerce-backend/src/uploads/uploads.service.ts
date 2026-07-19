@@ -11,6 +11,7 @@ import {
   SignedUrlRequestDto,
   ALLOWED_CONTENT_TYPES,
   MAX_UPLOAD_BYTES,
+  UploadScope,
 } from './dto/signed-url-request.dto';
 import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
 
@@ -95,5 +96,45 @@ export class UploadsService {
 
     // No `fields` → the client issues a PUT with the Content-Type header.
     return { uploadUrl, publicUrl, expiresAt, maxBytes: MAX_UPLOAD_BYTES };
+  }
+
+  private extFromContentType(ct: string): string {
+    if (ct.includes('png')) return 'png';
+    if (ct.includes('webp')) return 'webp';
+    if (ct.includes('gif')) return 'gif';
+    return 'jpg';
+  }
+
+  /**
+   * Server-side rehost: download a remote image and store it in R2, returning
+   * the public URL. Used by bulk import so third-party CDN links are never kept
+   * on our products. Falls back to the source URL when R2 isn't configured.
+   */
+  async putRemoteImage(sourceUrl: string, scope: UploadScope = 'product'): Promise<string> {
+    if (!/^https?:\/\//i.test(sourceUrl)) {
+      throw new BadRequestException(`Invalid image URL: ${sourceUrl}`);
+    }
+    if (!this.s3) return sourceUrl; // dev/CI fallback (no R2 configured)
+
+    const res = await fetch(sourceUrl, { redirect: 'follow', signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw new BadRequestException(`Image fetch failed (${res.status})`);
+
+    const contentType = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
+    if (!contentType.startsWith('image/')) {
+      throw new BadRequestException(`URL is not an image (${contentType})`);
+    }
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (!buffer.length) throw new BadRequestException('Downloaded image is empty');
+    if (buffer.length >= MAX_UPLOAD_BYTES) {
+      throw new PayloadTooLargeException(`Image too large: ${buffer.length} bytes`);
+    }
+
+    const key = `${scope}/${randomUUID()}/image.${this.extFromContentType(contentType)}`;
+    await this.s3.send(
+      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: buffer, ContentType: contentType }),
+    );
+    return this.publicBase
+      ? `${this.publicBase}/${key}`
+      : `${process.env.R2_ENDPOINT}/${this.bucket}/${key}`;
   }
 }
