@@ -1,10 +1,11 @@
 import {
-  Controller, Get, Patch, Param, Body, Query,
+  Controller, Get, Patch, Param, Body, Query, Headers,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { OrderService } from '../orders/order.service';
 import { ProductService } from '../products/product.service';
+import { StoresService } from '../stores/stores.service';
 import { Auth, CurrentUser } from '../auth/guards/auth.guards';
 import { ParseObjectIdPipe } from '../shared/pipes/parse-objectid.pipe';
 import { PaginationDto } from '../shared/database/pagination.dto';
@@ -22,30 +23,52 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly orderService: OrderService,
     private readonly productService: ProductService,
+    private readonly storesService: StoresService,
   ) {}
 
-  // NOTE: dashboard reads are admin+seller for now so the seller portal can
-  // render. The aggregations are still GLOBAL; per-seller scoping is TODO
-  // (filter by item.sellerId in admin.service.ts aggregations).
+  /**
+   * Dashboard scope: admins see platform-wide aggregates; sellers are scoped to
+   * their active store (resolved from X-Store-Id, membership-verified). Returns
+   * the storeId to filter by, or undefined for a global (admin) view.
+   */
+  private async dashboardStoreId(role: string, userId: string, header?: string): Promise<string | undefined> {
+    if (role === 'admin') return undefined;
+    const { storeId } = await this.storesService.resolveActiveStore(userId, header?.trim() || undefined);
+    return storeId;
+  }
+
   @Get('dashboard/stats')
   @Auth('admin', 'seller')
-  @ApiOperation({ summary: 'Get dashboard statistics' })
-  async getDashboardStats() {
-    return this.adminService.getDashboardStats();
+  @ApiOperation({ summary: 'Dashboard statistics (store-scoped for sellers)' })
+  async getDashboardStats(
+    @CurrentUser('role') role: string,
+    @CurrentUser('_id') userId: string,
+    @Headers('x-store-id') storeHeader?: string,
+  ) {
+    return this.adminService.getDashboardStats(await this.dashboardStoreId(role, userId, storeHeader));
   }
 
   @Get('dashboard/revenue')
   @Auth('admin', 'seller')
-  @ApiOperation({ summary: 'Get revenue chart data' })
-  async getRevenueChart(@Query('days') days?: number) {
-    return this.adminService.getRevenueChart(days || 7);
+  @ApiOperation({ summary: 'Revenue chart (store-scoped for sellers)' })
+  async getRevenueChart(
+    @CurrentUser('role') role: string,
+    @CurrentUser('_id') userId: string,
+    @Query('days') days?: number,
+    @Headers('x-store-id') storeHeader?: string,
+  ) {
+    return this.adminService.getRevenueChart(days || 7, await this.dashboardStoreId(role, userId, storeHeader));
   }
 
   @Get('dashboard/orders-by-status')
   @Auth('admin', 'seller')
-  @ApiOperation({ summary: 'Get orders grouped by status' })
-  async getOrdersByStatus() {
-    return this.adminService.getOrdersByStatus();
+  @ApiOperation({ summary: 'Orders grouped by status (store-scoped for sellers)' })
+  async getOrdersByStatus(
+    @CurrentUser('role') role: string,
+    @CurrentUser('_id') userId: string,
+    @Headers('x-store-id') storeHeader?: string,
+  ) {
+    return this.adminService.getOrdersByStatus(await this.dashboardStoreId(role, userId, storeHeader));
   }
 
   @Patch('orders/:id/status')

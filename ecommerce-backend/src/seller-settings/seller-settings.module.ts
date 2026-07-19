@@ -6,12 +6,14 @@ import {
   SellerSettings,
   SellerSettingsSchema,
 } from './schemas/seller-settings.schema';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: SellerSettings.name, schema: SellerSettingsSchema },
     ]),
+    StoresModule,
   ],
   controllers: [SellerSettingsController],
   providers: [SellerSettingsService],

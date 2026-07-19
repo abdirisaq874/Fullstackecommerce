@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Put } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -7,38 +7,34 @@ import {
 } from '@nestjs/swagger';
 import { SellerSettingsService } from './seller-settings.service';
 import { UpdateSellerSettingsDto } from './dto/seller-settings.dto';
-import {
-  CurrentUser,
-  JwtAuthGuard,
-  Roles,
-  RolesGuard,
-} from '../auth/guards/auth.guards';
-import { UserRole } from '../users/schemas/user.schema';
+import { StoreScoped, ActiveStore } from '../stores/guards/store-context.guard';
+import { StoreRole } from '../stores/schemas/store-membership.schema';
 
+// Settings are now per active store (keyed by store id). Store profile fields
+// also live on the Store doc (edited via PATCH /stores/:id); these cover the
+// operational settings (payouts/tax/notifications/shipping defaults).
 @ApiTags('seller-settings')
 @ApiBearerAuth()
 @Controller('seller/me/settings')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.SELLER, UserRole.ADMIN)
 export class SellerSettingsController {
   constructor(private readonly sellerSettingsService: SellerSettingsService) {}
 
   @Get('/')
-  @ApiOperation({
-    summary: 'Get current seller settings (create-on-first-read with defaults)',
-  })
-  @ApiResponse({ status: 200, description: 'Seller settings document.' })
-  async getSettings(@CurrentUser('_id') userId: string) {
-    return this.sellerSettingsService.findOrCreateForUser(userId);
+  @StoreScoped(StoreRole.STAFF)
+  @ApiOperation({ summary: 'Get the active store’s settings (create-on-first-read)' })
+  @ApiResponse({ status: 200, description: 'Store settings document.' })
+  async getSettings(@ActiveStore('storeId') storeId: string) {
+    return this.sellerSettingsService.findOrCreateForUser(storeId);
   }
 
   @Put('/')
-  @ApiOperation({ summary: 'Update current seller settings (full update via $set)' })
-  @ApiResponse({ status: 200, description: 'Updated seller settings document.' })
+  @StoreScoped(StoreRole.MANAGER)
+  @ApiOperation({ summary: 'Update the active store’s settings (manager+)' })
+  @ApiResponse({ status: 200, description: 'Updated store settings document.' })
   async updateSettings(
-    @CurrentUser('_id') userId: string,
+    @ActiveStore('storeId') storeId: string,
     @Body() dto: UpdateSellerSettingsDto,
   ) {
-    return this.sellerSettingsService.update(userId, dto);
+    return this.sellerSettingsService.update(storeId, dto);
   }
 }

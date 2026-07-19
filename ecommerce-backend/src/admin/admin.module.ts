@@ -9,6 +9,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { Inventory, InventorySchema } from '../inventory/schemas/inventory.schema';
 import { OrderModule } from '../orders/order.module';
 import { ProductModule } from '../products/product.module';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ProductModule } from '../products/product.module';
     ]),
     OrderModule,
     ProductModule,
+    StoresModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],
