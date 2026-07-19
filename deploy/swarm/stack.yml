@@ -123,7 +123,7 @@ services:
   # must NOT (poller stays single). Shares the backend env (Mongo/Redis/Resend).
   worker:
     image: us-central1-docker.pkg.dev/suuq-ecommerce/apps/ecommerce-backend:latest
-    command: ["node", "dist/src/worker.js"]
+    command: ["node", "dist/worker.js"]
     environment: *backend_env
     networks: [suuq]
     deploy:
