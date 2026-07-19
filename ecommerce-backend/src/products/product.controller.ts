@@ -38,8 +38,30 @@ export class ProductController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Search & filter products' })
+  @ApiOperation({ summary: 'Search & filter products (public catalog — active only)' })
   async search(@Query() query: ProductQueryDto) {
+    // Public, unauthenticated catalog: only ever expose ACTIVE products.
+    // A client-supplied status (e.g. ?status=draft) must NOT leak a store's
+    // unpublished/archived products — draft/archived are served only via the
+    // membership-enforced /products/mine route below. (Mutate in place to keep
+    // the DTO's computed `skip` getter, which a spread would drop.)
+    query.status = 'active';
+    return this.productService.search(query);
+  }
+
+  @Get('mine')
+  @StoreScoped(StoreRole.STAFF)
+  @ApiOperation({ summary: "List the active store's products (seller portal)" })
+  async listMine(
+    @Query() query: ProductQueryDto,
+    @ActiveStore('storeId') storeId: string,
+  ) {
+    // Scope is forced server-side to the membership-verified active store —
+    // a client cannot widen it by passing a different sellerId. Any status
+    // (active/draft/archived) is allowed here because the caller is a
+    // verified member of the store. (Mutate in place to keep the DTO's
+    // computed `skip` getter, which a spread would drop.)
+    query.sellerId = storeId;
     return this.productService.search(query);
   }
 
