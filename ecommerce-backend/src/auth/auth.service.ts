@@ -25,12 +25,22 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role: string;
+  /** token version — must equal the user's current `tokenVersion` (revocation). */
+  tv?: number;
 }
 
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
   expiresIn: string;
+}
+
+/** What we persist (in Redis) for a live refresh token, keyed by its hash. */
+interface RefreshRecord {
+  userId: string;
+  sessionId: string;
+  /** the user's tokenVersion at issue time; a bump (logout-all / reset) kills it. */
+  tv?: number;
 }
 
 /** Parse a duration string like '7d', '24h', '30m' into seconds. */
@@ -51,9 +61,20 @@ function parseDurationToSeconds(duration: string): number {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  private readonly REFRESH_TOKEN_PREFIX = 'refresh_token:';
+  private readonly LEGACY_REFRESH_PREFIX = 'refresh_token:'; // pre-session-model tokens
+  private readonly REFRESH_PREFIX = 'refresh:'; // refresh:<sha256(token)> → RefreshRecord
+  private readonly USED_PREFIX = 'refresh_used:'; // atomic one-time-use consume marker
+  private readonly SESSION_PREFIX = 'session:'; // session:<sessionId> → { userId, ... }
+  private readonly USER_SESSIONS_PREFIX = 'user_sessions:'; // set of sessionIds per user
   private readonly RESET_TOKEN_PREFIX = 'password_reset:';
   private readonly RESET_TOKEN_TTL = 3600; // 1 hour
+
+  private sha(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+  private refreshTtl(): number {
+    return parseDurationToSeconds(this.config.get<string>('auth.jwtRefreshExpiration') || '7d');
+  }
 
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
@@ -84,7 +105,7 @@ export class AuthService {
       firstName: user.firstName,
     });
 
-    return this.generateTokens(user);
+    return this.createSession(user);
   }
 
   async login(dto: LoginDto): Promise<AuthTokens> {
@@ -113,30 +134,88 @@ export class AuthService {
       email: user.email,
     });
 
-    return this.generateTokens(user);
+    return this.createSession(user);
   }
 
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
-    const key = this.REFRESH_TOKEN_PREFIX + refreshToken;
-    const stored = await this.redis.getJson<{ userId: string }>(key);
+    const hash = this.sha(refreshToken);
+    const client = this.redis.getClient();
+    const rec = await this.redis.getJson<RefreshRecord>(this.REFRESH_PREFIX + hash);
 
-    if (!stored) {
+    if (!rec) {
+      // Backward-compat: honor a pre-session-model token once, migrating it to a
+      // fresh session so users aren't logged out across the deploy — BUT never
+      // after a revocation. A logout-all / password-reset bumps tokenVersion, so
+      // a non-zero version means every prior (incl. legacy) token is dead.
+      const legacyKey = this.LEGACY_REFRESH_PREFIX + refreshToken;
+      const legacy = await this.redis.getJson<{ userId: string }>(legacyKey);
+      if (legacy) {
+        await this.redis.del(legacyKey);
+        const u = await this.userModel.findById(legacy.userId);
+        if (!u || !u.isActive) throw new UnauthorizedException('User not found or inactive');
+        if ((u.tokenVersion ?? 0) !== 0) {
+          throw new UnauthorizedException('Session has been revoked; please sign in again');
+        }
+        return this.createSession(u);
+      }
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const user = await this.userModel.findById(stored.userId);
+    // Atomic one-time consume: the FIRST caller sets the marker (SET NX). Any
+    // later presentation of the same token loses the race → reuse → revoke the
+    // whole session (defeats replay of a stolen/rotated token; race-free).
+    const won = await client.set(this.USED_PREFIX + hash, '1', 'EX', this.refreshTtl(), 'NX');
+    if (won !== 'OK') {
+      await this.revokeSession(rec.userId, rec.sessionId);
+      this.logger.warn(`Refresh-token reuse detected for user ${rec.userId}; session revoked`);
+      throw new UnauthorizedException('Refresh token reuse detected; session revoked');
+    }
+
+    // The session must still exist (logout / reuse deletes it).
+    const session = await this.redis.getJson<{ userId: string }>(this.SESSION_PREFIX + rec.sessionId);
+    if (!session) throw new UnauthorizedException('Session has been revoked');
+
+    const user = await this.userModel.findById(rec.userId);
     if (!user || !user.isActive) {
-      await this.redis.del(key);
+      await this.revokeSession(rec.userId, rec.sessionId);
       throw new UnauthorizedException('User not found or inactive');
     }
 
-    // Rotate: delete the old token, issue a new one
-    await this.redis.del(key);
-    return this.generateTokens(user);
+    // Authoritative revocation, independent of the enumeration set: if a
+    // logout-all / password reset advanced tokenVersion, this session is dead.
+    if ((rec.tv ?? 0) !== (user.tokenVersion ?? 0)) {
+      await this.revokeSession(rec.userId, rec.sessionId);
+      throw new UnauthorizedException('Session has been revoked');
+    }
+
+    return this.issueForSession(user, rec.sessionId);
   }
 
   async logout(refreshToken: string): Promise<void> {
-    await this.redis.del(this.REFRESH_TOKEN_PREFIX + refreshToken);
+    const hash = this.sha(refreshToken);
+    const rec = await this.redis.getJson<RefreshRecord>(this.REFRESH_PREFIX + hash);
+    if (rec) {
+      await this.revokeSession(rec.userId, rec.sessionId);
+      await this.redis.del(this.REFRESH_PREFIX + hash);
+    }
+    // also clear any legacy token
+    await this.redis.del(this.LEGACY_REFRESH_PREFIX + refreshToken);
+  }
+
+  /** Log out of every session and invalidate all outstanding access tokens. */
+  async logoutAll(userId: string): Promise<void> {
+    const client = this.redis.getClient();
+    const setKey = this.USER_SESSIONS_PREFIX + userId;
+    const sessionIds = await client.smembers(setKey);
+    await Promise.all(sessionIds.map((sid) => this.redis.del(this.SESSION_PREFIX + sid)));
+    await this.redis.del(setKey);
+    // Bump tokenVersion → JwtStrategy rejects all currently-issued access tokens.
+    await this.userModel.findByIdAndUpdate(userId, { $inc: { tokenVersion: 1 } });
+  }
+
+  private async revokeSession(userId: string, sessionId: string): Promise<void> {
+    await this.redis.del(this.SESSION_PREFIX + sessionId);
+    await this.redis.getClient().srem(this.USER_SESSIONS_PREFIX + userId, sessionId);
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
@@ -188,9 +267,10 @@ export class AuthService {
     // Delete the reset token so it can't be reused
     await this.redis.del(key);
 
-    // Invalidate all existing refresh tokens for this user by scanning keys
-    // In production with many users, consider a per-user token versioning scheme
-    this.logger.log(`Password reset completed for user ${user.email}`);
+    // Revoke every session + bump tokenVersion so all outstanding access AND
+    // refresh tokens for this user are immediately invalidated.
+    await this.logoutAll(user._id.toString());
+    this.logger.log(`Password reset completed for user ${user.email}; all sessions revoked`);
 
     return { message: 'Password has been reset successfully' };
   }
@@ -199,28 +279,32 @@ export class AuthService {
     return this.userModel.findById(userId);
   }
 
-  private async generateTokens(user: UserDocument): Promise<AuthTokens> {
-    const payload: JwtPayload = {
-      sub: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    };
+  /** Start a brand-new session (login / register / legacy migration). */
+  private async createSession(user: UserDocument): Promise<AuthTokens> {
+    const sessionId = crypto.randomBytes(16).toString('hex');
+    return this.issueForSession(user, sessionId);
+  }
 
+  /**
+   * Mint an access+refresh pair bound to an (existing or new) session, and
+   * (re)assert the session record, index membership AND index TTL — so a
+   * continuously-rotated session can never outlive the `user_sessions` set that
+   * logout-all relies on. The access token + refresh record carry `tv` for
+   * authoritative revocation.
+   */
+  private async issueForSession(user: UserDocument, sessionId: string): Promise<AuthTokens> {
+    const uid = user._id.toString();
+    const tv = user.tokenVersion ?? 0;
+    const payload: JwtPayload = { sub: uid, email: user.email, role: user.role, tv };
     const accessToken = this.jwtService.sign(payload);
 
-    // Generate a cryptographically secure refresh token
     const refreshToken = crypto.randomBytes(40).toString('hex');
-
-    // Parse refresh expiry from config (e.g. '7d', '24h')
-    const refreshExpiry = this.config.get<string>('auth.jwtRefreshExpiration') || '7d';
-    const ttlSeconds = parseDurationToSeconds(refreshExpiry);
-
-    // Store in Redis with automatic TTL expiry
-    await this.redis.setJson(
-      this.REFRESH_TOKEN_PREFIX + refreshToken,
-      { userId: user._id.toString() },
-      ttlSeconds,
-    );
+    const ttl = this.refreshTtl();
+    await this.redis.setJson(this.REFRESH_PREFIX + this.sha(refreshToken), { userId: uid, sessionId, tv }, ttl);
+    await this.redis.setJson(this.SESSION_PREFIX + sessionId, { userId: uid, lastUsedAt: Date.now() }, ttl);
+    const client = this.redis.getClient();
+    await client.sadd(this.USER_SESSIONS_PREFIX + uid, sessionId);
+    await client.expire(this.USER_SESSIONS_PREFIX + uid, ttl);
 
     return {
       accessToken,

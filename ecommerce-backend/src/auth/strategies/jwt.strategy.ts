@@ -43,6 +43,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException();
     }
 
+    // Token-version check → instant revocation on logout-all / password reset.
+    // Tokens minted before this field existed carry no `tv`; treat them as valid
+    // (backward-compat) so a deploy doesn't force a mass re-login.
+    if (payload.tv !== undefined && payload.tv !== (user.tokenVersion ?? 0)) {
+      throw new UnauthorizedException('Token has been revoked');
+    }
+
     // Cache the active status
     await this.redis.setJson(cacheKey, { isActive: true, role: user.role }, USER_CACHE_TTL);
 

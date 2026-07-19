@@ -82,6 +82,12 @@ export class User {
   @Prop({ default: true })
   isActive: boolean;
 
+  // Bumped on "log out everywhere" / password reset. The access-token JWT carries
+  // this as `tv`; JwtStrategy rejects tokens whose `tv` is stale → instant
+  // revocation of all outstanding access tokens for this user.
+  @Prop({ default: 0 })
+  tokenVersion: number;
+
   @Prop()
   lastLoginAt?: Date;
 

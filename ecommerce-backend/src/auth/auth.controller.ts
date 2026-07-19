@@ -1,6 +1,7 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
+import { Auth, CurrentUser } from './guards/auth.guards';
 import {
   RegisterDto,
   LoginDto,
@@ -44,6 +45,15 @@ export class AuthController {
   async logout(@Body() dto: RefreshTokenDto) {
     await this.authService.logout(dto.refreshToken);
     return { message: 'Logged out successfully' };
+  }
+
+  @Post('logout-all')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Log out of all sessions/devices (revokes all tokens)' })
+  async logoutAll(@CurrentUser('_id') userId: string) {
+    await this.authService.logoutAll(userId);
+    return { message: 'Logged out of all sessions' };
   }
 
   @Post('forgot-password')

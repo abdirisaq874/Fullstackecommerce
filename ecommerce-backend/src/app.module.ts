@@ -40,6 +40,7 @@ import { SearchEngineModule } from './search-engine/search-engine.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { RecommendationsModule } from './recommendations/recommendations.module';
 import { SellersModule } from './sellers/sellers.module';
+import { StoresModule } from './stores/stores.module';
 
 @Module({
   imports: [
@@ -116,6 +117,7 @@ import { SellersModule } from './sellers/sellers.module';
     ReviewsModule,
     RecommendationsModule,
     SellersModule,
+    StoresModule,
   ],
   providers: [
     // Apply rate limiting globally
