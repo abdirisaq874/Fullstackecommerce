@@ -101,7 +101,9 @@ function readUrls(s: string): string[] {
 }
 
 export function parseImportFile(buffer: Buffer): ParseResult {
-  const wb = XLSX.read(buffer, { type: 'buffer' });
+  // codepage 65001 = UTF-8. SheetJS otherwise defaults CSV to Latin-1, which
+  // mangles non-ASCII text (Turkish ı/ş, Somali, Arabic) into mojibake.
+  const wb = XLSX.read(buffer, { type: 'buffer', codepage: 65001 });
   const sheetName = wb.SheetNames[0];
   if (!sheetName) return { products: [], errors: [{ message: 'No sheet found in file' }] };
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheetName], {
