@@ -70,6 +70,8 @@ export class AuthService {
   private readonly USER_SESSIONS_PREFIX = 'user_sessions:'; // set of sessionIds per user
   private readonly RESET_TOKEN_PREFIX = 'password_reset:';
   private readonly RESET_TOKEN_TTL = 3600; // 1 hour
+  private readonly EMAIL_VERIFY_PREFIX = 'email_verify:';
+  private readonly EMAIL_VERIFY_TTL = 86400; // 24 hours
 
   private sha(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
@@ -108,7 +110,62 @@ export class AuthService {
       firstName: user.firstName,
     });
 
+    // Send an email-verification link (best-effort — must never block signup).
+    try {
+      await this.issueEmailVerification(user);
+    } catch (e) {
+      this.logger.warn(`verification email publish failed: ${(e as Error).message}`);
+    }
+
     return this.createSession(user);
+  }
+
+  /** Mint a verification token, stash the hash in Redis, and queue the email. */
+  private async issueEmailVerification(user: {
+    _id: { toString(): string };
+    email: string;
+    firstName: string;
+  }): Promise<void> {
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+    await this.redis.setJson(
+      this.EMAIL_VERIFY_PREFIX + hashedToken,
+      { userId: user._id.toString(), email: user.email },
+      this.EMAIL_VERIFY_TTL,
+    );
+    await this.outbox.publish({
+      eventType: EmailEventType.AUTH_EMAIL_VERIFY,
+      aggregateType: 'user',
+      aggregateId: user._id.toString(),
+      idempotencyKey: `auth.email.verify:${hashedToken}`,
+      payload: { recipientEmail: user.email, name: user.firstName, token: rawToken },
+    });
+  }
+
+  /** Verify an email address from the link's token. */
+  async verifyEmail(dto: { token: string }): Promise<{ message: string }> {
+    const hashedToken = crypto.createHash('sha256').update(dto.token).digest('hex');
+    const key = this.EMAIL_VERIFY_PREFIX + hashedToken;
+    const stored = await this.redis.getJson<{ userId: string; email: string }>(key);
+    if (!stored) {
+      throw new BadRequestException('Invalid or expired verification token');
+    }
+    await this.userModel.updateOne({ _id: stored.userId }, { $set: { emailVerified: true } });
+    await this.redis.del(key);
+    return { message: 'Email verified successfully' };
+  }
+
+  /** Re-send the verification email (enumeration-safe). */
+  async resendVerification(dto: { email: string }): Promise<{ message: string }> {
+    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    if (user && !user.emailVerified) {
+      try {
+        await this.issueEmailVerification(user);
+      } catch (e) {
+        this.logger.warn(`resend verification failed: ${(e as Error).message}`);
+      }
+    }
+    return { message: 'If that account exists and is unverified, a verification email has been sent' };
   }
 
   async login(dto: LoginDto): Promise<AuthTokens> {

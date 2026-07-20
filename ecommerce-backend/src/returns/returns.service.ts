@@ -15,6 +15,8 @@ import {
 import { Order } from '../orders/schemas/order.schema';
 import { Product } from '../products/schemas/product.schema';
 import { EventBusService } from '../shared/events/event-bus.service';
+import { OutboxService } from '../outbox/outbox.service';
+import { EmailEventType } from '../shared/events/email-event.enum';
 import {
   PaginatedResponseDto,
   PaginationDto,
@@ -56,6 +58,7 @@ export class ReturnsService {
     @InjectModel(Order.name) private readonly orderModel: Model<Order>,
     @InjectModel(Product.name) private readonly productModel: Model<Product>,
     private readonly eventBus: EventBusService,
+    private readonly outbox: OutboxService,
   ) {}
 
   // ═══════════════════════════════════════════
@@ -159,6 +162,25 @@ export class ReturnsService {
       sellerId: sellerId.toString(),
       itemCount: ret.items.length,
     });
+
+    // Buyer "return request received" email (best-effort).
+    try {
+      await this.outbox.publish({
+        eventType: EmailEventType.RETURN_REQUESTED,
+        aggregateType: 'return',
+        aggregateId: ret._id.toString(),
+        payload: {
+          recipientUserId: userId,
+          returnId: ret._id.toString(),
+          orderId: dto.orderId,
+          orderNumber: order.orderNumber,
+          storeId: order.storeId ? order.storeId.toString() : undefined,
+          currency: order.currency,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`return.requested email publish failed: ${(e as Error).message}`);
+    }
 
     this.logger.log(
       `Return ${ret._id.toString()} created for order ${dto.orderId} by user ${userId}`,
@@ -282,6 +304,37 @@ export class ReturnsService {
       previousStatus,
       status: newStatus,
     });
+
+    // Buyer "refund issued" email when the return reaches 'refunded' (best-effort).
+    if (newStatus === 'refunded') {
+      try {
+        const order = await this.orderModel
+          .findById(ret.orderId)
+          .select({ orderNumber: 1, storeId: 1, currency: 1, total: 1 })
+          .lean();
+        const cents = ret.refundDecision?.refundAmountCents;
+        await this.outbox.publish({
+          eventType: EmailEventType.REFUND_ISSUED,
+          aggregateType: 'return',
+          aggregateId: ret._id.toString(),
+          payload: {
+            recipientUserId: ret.userId.toString(),
+            returnId: ret._id.toString(),
+            orderId: ret.orderId.toString(),
+            orderNumber: (order as { orderNumber?: string } | null)?.orderNumber,
+            storeId: (order as { storeId?: { toString(): string } } | null)?.storeId?.toString(),
+            // refundAmountCents is integer cents; templates show major units.
+            amount:
+              typeof cents === 'number'
+                ? cents / 100
+                : (order as { total?: number } | null)?.total,
+            currency: (order as { currency?: string } | null)?.currency ?? 'USD',
+          },
+        });
+      } catch (e) {
+        this.logger.warn(`refund.issued email publish failed: ${(e as Error).message}`);
+      }
+    }
 
     return ret;
   }

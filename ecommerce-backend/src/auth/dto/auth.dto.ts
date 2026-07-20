@@ -84,3 +84,15 @@ export class ResetPasswordDto {
   })
   newPassword: string;
 }
+
+export class VerifyEmailDto {
+  @ApiProperty()
+  @IsString()
+  token: string;
+}
+
+export class ResendVerificationDto {
+  @ApiProperty({ example: 'john@example.com' })
+  @IsEmail()
+  email: string;
+}
