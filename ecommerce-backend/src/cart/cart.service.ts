@@ -231,10 +231,16 @@ export class CartService {
     const productIds = [...new Set(cart.items.map((i) => i.productId.toString()))];
     const products = await this.productModel
       .find({ _id: { $in: productIds.map((id) => new Types.ObjectId(id)) } })
-      .select('sellerId')
+      .select('sellerId slug')
       .lean();
     const storeByProduct = new Map(
       products.map((p: any) => [p._id.toString(), p.sellerId ? p.sellerId.toString() : undefined]),
+    );
+    // slug is the catalog id used by external ad feeds (Meta/Google); expose it
+    // on each line so the storefront can tag checkout/purchase pixel events with
+    // a content_id that matches the product feed.
+    const slugByProduct = new Map(
+      products.map((p: any) => [p._id.toString(), p.slug as string | undefined]),
     );
     const storeIds = [...new Set([...storeByProduct.values()].filter(Boolean) as string[])];
     const stores = storeIds.length
@@ -251,6 +257,7 @@ export class CartService {
         ...plain,
         sellerId: storeId, // kept as `sellerId` (== store id) for the order snapshot
         storeName: (storeId && nameByStore.get(storeId)) || 'Store',
+        slug: slugByProduct.get(item.productId.toString()),
       };
     });
 

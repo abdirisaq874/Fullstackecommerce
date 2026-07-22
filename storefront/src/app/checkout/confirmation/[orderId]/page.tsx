@@ -1,11 +1,13 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { CheckCircle2, Package, ArrowRight, Store, Banknote } from 'lucide-react';
 import { formatPrice } from '@/lib/utils';
 import { Button, Container, Badge } from '@/components/ui';
 import { RequireAuth } from '@/components/auth/RequireAuth';
 import { useGetOrderQuery } from '@/store/api/ordersApi';
+import * as metaPixel from '@/lib/meta-pixel';
 import type { OrderItem, PaymentMethod } from '@/types';
 
 const PAY_LABEL: Record<PaymentMethod, string> = {
@@ -22,6 +24,28 @@ export default function ConfirmationPage({ params }: { params: { orderId: string
 
 function Confirmation({ orderId }: { orderId: string }) {
   const { data: order, isLoading, isError } = useGetOrderQuery(orderId);
+
+  // Meta Pixel Purchase — fire exactly once per order. The confirmation page is
+  // re-visitable (refresh, back button, bookmark), so guard on a localStorage
+  // marker keyed by order id. eventId=order._id lets the server-side CAPI event
+  // de-duplicate against this browser event.
+  useEffect(() => {
+    if (!order?._id || typeof window === 'undefined') return;
+    const key = `suuq:pxPurchase:${order._id}`;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1');
+    const items = order.items as OrderItem[];
+    metaPixel.purchase({
+      ids: items.map((i) => i.slug).filter(Boolean) as string[],
+      contents: items
+        .filter((i) => i.slug)
+        .map((i) => ({ id: i.slug as string, quantity: i.quantity })),
+      value: order.total,
+      currency: order.currency,
+      numItems: items.reduce((sum, i) => sum + i.quantity, 0),
+      eventId: order._id,
+    });
+  }, [order]);
 
   if (isLoading) return <Container className="py-20"><div className="skeleton mx-auto h-72 max-w-2xl" /></Container>;
   if (isError || !order)

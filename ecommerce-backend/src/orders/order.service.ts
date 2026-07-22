@@ -78,6 +78,7 @@ export class OrderService {
           productName: item.productName,
           variantName: item.variantName,
           sku: item.variantSku,
+          slug: item.slug,
           imageUrl: item.imageUrl,
           quantity: item.quantity,
           unitPrice: item.unitPrice,

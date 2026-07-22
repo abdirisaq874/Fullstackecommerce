@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,7 @@ import { RequireAuth } from '@/components/auth/RequireAuth';
 import { useGetCartQuery } from '@/store/api/cartApi';
 import { useListAddressesQuery, useAddAddressMutation } from '@/store/api/usersApi';
 import { useCreateOrderMutation } from '@/store/api/ordersApi';
+import * as metaPixel from '@/lib/meta-pixel';
 import type { Address, CartItem, PaymentMethod } from '@/types';
 
 type Step = 'address' | 'review' | 'payment' | 'place';
@@ -81,6 +82,20 @@ function CheckoutView() {
   const subtotal = cart?.subtotal ?? 0;
   const discount = cart?.discountAmount ?? 0;
   const total = Math.max(0, subtotal - discount);
+
+  // Meta Pixel InitiateCheckout — fire once when the cart first loads. content
+  // ids are product slugs (matching the catalog feed); items missing a slug are
+  // dropped from content_ids but still counted in value/num_items.
+  const checkoutTracked = useRef(false);
+  useEffect(() => {
+    if (checkoutTracked.current || items.length === 0) return;
+    checkoutTracked.current = true;
+    metaPixel.initiateCheckout({
+      ids: items.map((i) => i.slug).filter(Boolean) as string[],
+      value: total,
+      numItems: items.reduce((sum, i) => sum + i.quantity, 0),
+    });
+  }, [items, total]);
 
   const PAYMENT_METHODS: { id: PaymentMethod; icon: LucideIcon; available: boolean }[] = [
     { id: 'cod', icon: Banknote, available: true },

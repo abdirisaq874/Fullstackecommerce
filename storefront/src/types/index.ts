@@ -183,6 +183,7 @@ export interface OrderItem {
   productId: string;
   variantSku: string;
   productName: string;
+  slug?: string;
   quantity: number;
   unitPrice: number;
   totalPrice: number;

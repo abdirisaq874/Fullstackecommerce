@@ -38,6 +38,7 @@ jobs:
             --build-arg NEXT_PUBLIC_API_URL="${{ vars.BACKEND_URL }}" \
             --build-arg NEXT_PUBLIC_SITE_NAME="${{ vars.NEXT_PUBLIC_SITE_NAME }}" \
             --build-arg NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="${{ vars.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}" \
+            --build-arg NEXT_PUBLIC_META_PIXEL_ID="${{ vars.NEXT_PUBLIC_META_PIXEL_ID }}" \
             -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" ./storefront
           docker push "$IMAGE:${{ github.sha }}"
           docker push "$IMAGE:latest"

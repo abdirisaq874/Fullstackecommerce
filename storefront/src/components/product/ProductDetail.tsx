@@ -24,13 +24,8 @@ import { ProductReviews } from './ProductReviews';
 import { RelatedProducts } from './RelatedProducts';
 import { FrequentlyBoughtTogether } from './FrequentlyBoughtTogether';
 import { useRecentlyViewed } from '@/hooks/useRecentlyViewed';
+import * as metaPixel from '@/lib/meta-pixel';
 import type { Category } from '@/types';
-
-const PLACEHOLDER =
-  'data:image/svg+xml;utf8,' +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" font-family="sans-serif" font-size="22" fill="#94a3b8" text-anchor="middle" dy=".3em">No image</text></svg>`,
-  );
 
 // Colour-name → hex, used to render a solid swatch when a colour has no tagged
 // product image. Includes Turkish names (the imported catalogue is Turkish).
@@ -120,6 +115,17 @@ export function ProductDetail({ slug }: { slug: string }) {
     });
   }, [product, track]);
 
+  // Meta Pixel ViewContent — content id is the slug (matches the catalog feed).
+  useEffect(() => {
+    if (!product) return;
+    metaPixel.viewContent({
+      id: product.slug,
+      name: product.name,
+      value: product.basePrice,
+      currency: product.currency,
+    });
+  }, [product]);
+
   const hasVariants = (product?.variants?.length ?? 0) > 0;
   const { data: stock } = useCheckStockQuery(selectedVariant?.sku ?? '', { skip: !selectedVariant?.sku });
   // Variant products use SKU-level inventory but fall back to product.stock when
@@ -144,7 +150,6 @@ export function ProductDetail({ slug }: { slug: string }) {
   // colour's images; otherwise fall back to the full gallery.
   const colorImages = selected.Color ? allImages.filter((im) => im.altText === selected.Color) : [];
   const images = colorImages.length ? colorImages : allImages;
-  const mainImg = images[activeImg]?.url || images[0]?.url || PLACEHOLDER;
   const price = selectedVariant?.priceOverride ?? product.basePrice;
   const displayName = localizedText(product.localizations, locale, 'name', product.name);
   const displayShort = localizedText(product.localizations, locale, 'shortDescription', product.shortDescription);
@@ -192,6 +197,13 @@ export function ProductDetail({ slug }: { slug: string }) {
       }
       try {
         await addToCart({ productId: product._id, variantSku: selectedVariant?.sku, quantity: qty }).unwrap();
+        metaPixel.addToCart({
+          id: product.slug,
+          name: product.name,
+          quantity: qty,
+          value: price * qty,
+          currency: product.currency,
+        });
         if (buyNow) router.push('/checkout');
         else {
           toast.success('Added to cart');
@@ -251,7 +263,12 @@ export function ProductDetail({ slug }: { slug: string }) {
         {/* Gallery */}
         <div>
           <div className="relative">
-            <ZoomImage src={mainImg} alt={product.name} />
+            <ZoomImage
+              images={images}
+              index={activeImg}
+              alt={product.name}
+              onIndexChange={setActiveImg}
+            />
             {product.compareAtPrice && product.compareAtPrice > price && (
               <Badge variant="sale" className="absolute left-4 top-4 z-10 text-sm">SALE</Badge>
             )}

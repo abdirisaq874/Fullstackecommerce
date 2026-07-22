@@ -5,6 +5,7 @@ import { getLocale, getMessages } from 'next-intl/server';
 import './globals.css';
 import { Providers } from '@/components/providers';
 import { SiteChrome } from '@/components/layout/SiteChrome';
+import { MetaPixel } from '@/components/MetaPixel';
 import { SITE_NAME } from '@/lib/utils';
 
 // Space Grotesk throughout (display + body); IBM Plex Mono for utility labels.
@@ -25,6 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={locale} className={`${sans.variable} ${display.variable} ${mono.variable}`}>
       <body className="flex min-h-screen flex-col">
+        <MetaPixel />
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Providers>
             <SiteChrome>{children}</SiteChrome>

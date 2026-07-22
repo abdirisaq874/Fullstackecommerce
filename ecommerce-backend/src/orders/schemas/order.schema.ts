@@ -10,6 +10,9 @@ export class OrderItem {
   @Prop() productName: string;
   @Prop() variantName: string;
   @Prop() sku: string;
+  // Product slug — the catalog id used by external ad feeds (Meta/Google), so a
+  // Purchase pixel/CAPI event can reference the same content_id as the feed.
+  @Prop() slug?: string;
   @Prop() imageUrl: string;
   @Prop({ required: true }) quantity: number;
   @Prop({ required: true }) unitPrice: number;
