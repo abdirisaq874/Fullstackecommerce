@@ -170,7 +170,13 @@ export const productsApi = baseApi.injectEndpoints({
         url: `/products/${slug}`,
         method: 'GET',
       }),
-      transformResponse: (res: ResponseEnvelope<Product> | Product) => unwrapEnvelope<Product>(res),
+      // The API serializes Mongo `_id` (not the `id` virtual), so map it → `id`.
+      // Without this, `product.id` is undefined and saving PATCHes
+      // /products/undefined → "Invalid ID format: undefined".
+      transformResponse: (res: ResponseEnvelope<Product> | Product) => {
+        const p = unwrapEnvelope<any>(res as any);
+        return p && typeof p === 'object' ? ({ ...p, id: p.id ?? p._id ?? '' } as Product) : p;
+      },
       providesTags: (_, __, id) => [{ type: 'Product', id }],
     }),
 
