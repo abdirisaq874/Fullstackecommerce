@@ -8,7 +8,8 @@ import { toast } from 'sonner';
 import { Mail, Lock } from 'lucide-react';
 import { Button, Input } from '@/components/ui';
 import { AuthShell } from '@/components/auth/AuthShell';
-import { useLoginMutation } from '@/store/api/authApi';
+import { useLoginMutation, authApi } from '@/store/api/authApi';
+import { useAppDispatch } from '@/store';
 
 export default function LoginPage() {
   return <Suspense fallback={null}><LoginForm /></Suspense>;
@@ -20,6 +21,7 @@ function LoginForm() {
   const params = useSearchParams();
   const redirect = params.get('redirect') || '/account';
   const [login, { isLoading }] = useLoginMutation();
+  const dispatch = useAppDispatch();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -27,6 +29,12 @@ function LoginForm() {
     e.preventDefault();
     try {
       await login({ email, password }).unwrap();
+      // Storefront is customer-only. Resolve the profile and stop here for
+      // seller accounts — the session guard signs them out with a message.
+      const profile = await dispatch(
+        authApi.endpoints.me.initiate(undefined, { forceRefetch: true }),
+      ).unwrap();
+      if (profile.role === 'seller') return;
       toast.success(t('welcomeBack'));
       router.push(redirect);
     } catch {
