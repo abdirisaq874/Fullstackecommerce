@@ -43,6 +43,7 @@ import { RecommendationsModule } from './recommendations/recommendations.module'
 import { SellersModule } from './sellers/sellers.module';
 import { StoresModule } from './stores/stores.module';
 import { MailModule } from './mail/mail.module';
+import { FeedModule } from './feed/feed.module';
 
 @Module({
   imports: [
@@ -128,6 +129,7 @@ import { MailModule } from './mail/mail.module';
     RecommendationsModule,
     SellersModule,
     StoresModule,
+    FeedModule,
   ],
   providers: [
     // Apply rate limiting globally

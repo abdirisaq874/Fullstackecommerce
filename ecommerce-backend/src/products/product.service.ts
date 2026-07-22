@@ -283,6 +283,21 @@ export class ProductService {
       .limit(limit);
   }
 
+  /**
+   * Cursor over every feed-eligible product for external catalog feeds
+   * (Meta Commerce / Google Merchant). Active-only, brand + category populated.
+   * `.lean().cursor()` streams the result so a large catalog is never held in
+   * memory all at once. Not paginated — the caller consumes the whole cursor.
+   */
+  findActiveForFeedCursor() {
+    return this.productModel
+      .find({ status: 'active' })
+      .populate('brandId', 'name')
+      .populate('categoryId', 'name path googleTaxonomyId')
+      .lean()
+      .cursor();
+  }
+
   private async generateProductSlug(name: string): Promise<string> {
     const baseSlug = generateSlug(name);
     const exists = await this.productModel.findOne({ slug: baseSlug });
