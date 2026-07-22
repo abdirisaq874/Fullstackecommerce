@@ -63,6 +63,15 @@ export interface ListProductsParams {
   sortOrder?: 'asc' | 'desc';
 }
 
+/** A page of products plus the server's TRUE totals (from countDocuments). */
+export interface ProductsPage {
+  items: Product[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 export const productsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     listProducts: builder.query<Product[], ListProductsParams | void>({
@@ -101,6 +110,53 @@ export const productsApi = baseApi.injectEndpoints({
       providesTags: (result) =>
         result
           ? [{ type: 'Product', id: 'LIST' }, ...result.map(p => ({ type: 'Product' as const, id: p.id }))]
+          : [{ type: 'Product', id: 'LIST' }],
+    }),
+
+    /**
+     * Same `/products/mine` route as `listProducts`, but KEEPS the server's
+     * pagination `meta` so the UI gets the TRUE total (a countDocuments) — not
+     * just the length of the returned page. Powers the products table's pager and
+     * the All/Active/Drafts/Archived tab counts, which must stay accurate beyond
+     * the 100-row page cap.
+     */
+    listProductsPage: builder.query<ProductsPage, ListProductsParams | void>({
+      query: (params) => {
+        const p = params || {};
+        return {
+          url: '/products/mine',
+          method: 'GET',
+          params: {
+            page: p.page,
+            limit: p.limit,
+            status: p.status,
+            q: p.search,
+            category: p.categoryId,
+            sortBy: p.sortBy,
+            sortOrder: p.sortOrder,
+          },
+        };
+      },
+      transformResponse: (
+        res: ResponseEnvelope<Product[]> | { data: Product[]; meta?: Record<string, number> } | Product[],
+      ): ProductsPage => {
+        const u = unwrapEnvelope<any>(res as any);
+        const rawItems: any[] = Array.isArray(u?.data) ? u.data : Array.isArray(u) ? u : [];
+        const items = rawItems.map((p) => ({ ...p, id: p.id ?? p._id ?? '' })) as Product[];
+        const meta = (u && typeof u === 'object' && u.meta) || {};
+        const limit = meta.limit ?? (items.length || 1);
+        const total = meta.total ?? items.length;
+        return {
+          items,
+          total,
+          page: meta.page ?? 1,
+          limit,
+          totalPages: meta.totalPages ?? Math.max(1, Math.ceil(total / limit)),
+        };
+      },
+      providesTags: (result) =>
+        result
+          ? [{ type: 'Product', id: 'LIST' }, ...result.items.map((p) => ({ type: 'Product' as const, id: p.id }))]
           : [{ type: 'Product', id: 'LIST' }],
     }),
 
@@ -226,6 +282,7 @@ export const productsApi = baseApi.injectEndpoints({
 
 export const {
   useListProductsQuery,
+  useListProductsPageQuery,
   useGetProductQuery,
   useAiDraftProductMutation,
   useCreateProductMutation,

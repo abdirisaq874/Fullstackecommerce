@@ -1,55 +1,94 @@
 'use client';
 
-import { useState, useMemo, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Plus, Filter, Upload, Download, Archive, Star, StarOff, Search, MoreHorizontal, X, BarChart3, History } from 'lucide-react';
+import { Plus, Upload, Download, Archive, Star, StarOff, Search, X, BarChart3, History, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/primitives/card';
 import { Button } from '@/components/primitives/button';
 import { Badge } from '@/components/primitives/badge';
-import { Field, Input, Select } from '@/components/primitives/field';
+import { Input, Select } from '@/components/primitives/field';
 import { ResponsiveTable, type ResponsiveColumn } from '@/components/data/responsive-table';
 import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
 import { BulkImportModal } from '@/components/product/bulk-import-modal';
 import { ConfirmDialog } from '@/components/primitives/confirm-dialog';
 import { Money } from '@/components/shared/format';
-import { useListProductsQuery, useBulkUpdateProductsMutation, useArchiveProductMutation } from '@/lib/api';
+import { useListProductsPageQuery, useBulkUpdateProductsMutation } from '@/lib/api';
 import { useToast } from '@/lib/hooks/use-toast';
 import { productDisplayStatus, toCSV, downloadCSV } from '@/lib/utils';
 import { CATEGORIES } from '@/lib/config/reference-data';
 import type { Product } from '@/lib/types';
 import clsx from 'clsx';
 
+type StatusFilter = 'all' | 'active' | 'draft' | 'archived';
+const PER_PAGE_OPTIONS = [25, 50, 100];
+const DEFAULT_PER_PAGE = 50;
+const SEARCH_DEBOUNCE_MS = 400;
+
 export default function ProductsPage() {
   const router = useRouter();
-  // Products are scoped to the ACTIVE store server-side via /products/mine
-  // (X-Store-Id header). Switching stores resets the RTK cache, so these refetch
-  // for the newly-active store automatically — no client-side sellerId needed.
-  // The backend returns a single status per call (no "all" mode), so we fetch
-  // each status and merge to power the All/Active/Drafts/Archived tabs + counts.
-  // (Mongo returns `_id`; map it to the `id` the UI expects.)
-  const activeQ = useListProductsQuery({ status: 'active', limit: 100 });
-  const draftQ = useListProductsQuery({ status: 'draft', limit: 100 });
-  const archivedQ = useListProductsQuery({ status: 'archived', limit: 100 });
-  const products = useMemo<Product[]>(() => {
-    const withId = (arr?: Product[]) =>
-      (arr ?? []).map(p => ({ ...p, id: p.id ?? (p as unknown as { _id?: string })._id ?? '' }));
-    return [...withId(activeQ.data), ...withId(draftQ.data), ...withId(archivedQ.data)];
-  }, [activeQ.data, draftQ.data, archivedQ.data]);
-  const isLoading = activeQ.isLoading || draftQ.isLoading || archivedQ.isLoading;
-  // Only show the error screen if EVERY query failed — one failed status must not
-  // blank the whole page (it shows whatever did load).
-  const isError = activeQ.isError && draftQ.isError && archivedQ.isError;
-  const refetch = () => { activeQ.refetch(); draftQ.refetch(); archivedQ.refetch(); };
+  const pathname = usePathname();
+  const sp = useSearchParams();
+
+  // --- URL-driven view state (survives refresh / is shareable) ---------------
+  const status = ((sp.get('status') as StatusFilter) || 'all');
+  const page = Math.max(1, parseInt(sp.get('page') || '1', 10) || 1);
+  const perPage = PER_PAGE_OPTIONS.includes(Number(sp.get('perPage'))) ? Number(sp.get('perPage')) : DEFAULT_PER_PAGE;
+  const qParam = sp.get('q') || '';
+  const category = sp.get('category') || '';
+
+  const setParams = (updates: Record<string, string | undefined>, resetPage = false) => {
+    const next = new URLSearchParams(sp.toString());
+    for (const [k, v] of Object.entries(updates)) {
+      if (v === undefined || v === '') next.delete(k); else next.set(k, v);
+    }
+    if (resetPage) next.delete('page');
+    router.replace(`${pathname}?${next.toString()}`);
+  };
+
+  // Search box is local + debounced so we don't rewrite the URL on every keystroke.
+  const [searchInput, setSearchInput] = useState(qParam);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (searchInput !== qParam) setParams({ q: searchInput || undefined }, true);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
+  // --- data ------------------------------------------------------------------
+  const commonFilter = { search: qParam || undefined, categoryId: category || undefined };
+  // The visible page for the current tab.
+  const listQ = useListProductsPageQuery({
+    status: status === 'all' ? undefined : status,
+    page,
+    limit: perPage,
+    ...commonFilter,
+  });
+  // Tiny count-only queries (limit 1) — read the server's TRUE per-status totals
+  // for the tab badges + header, honouring the active search/category filter.
+  const activeCntQ = useListProductsPageQuery({ status: 'active', limit: 1, ...commonFilter });
+  const draftCntQ = useListProductsPageQuery({ status: 'draft', limit: 1, ...commonFilter });
+  const archivedCntQ = useListProductsPageQuery({ status: 'archived', limit: 1, ...commonFilter });
+
+  const cActive = activeCntQ.data?.total ?? 0;
+  const cDraft = draftCntQ.data?.total ?? 0;
+  const cArchived = archivedCntQ.data?.total ?? 0;
+  const cAll = cActive + cDraft + cArchived;
+  const statusCounts = { all: cAll, active: cActive, draft: cDraft, archived: cArchived };
+
+  const items = listQ.data?.items ?? [];
+  const total = listQ.data?.total ?? 0;
+  const totalPages = Math.max(1, listQ.data?.totalPages ?? 1);
+  const isLoading = listQ.isLoading || listQ.isFetching;
+  const isError = listQ.isError;
+  const refetch = () => { listQ.refetch(); activeCntQ.refetch(); draftCntQ.refetch(); archivedCntQ.refetch(); };
+
   const [bulkUpdate, { isLoading: bulking }] = useBulkUpdateProductsMutation();
-  const [archive] = useArchiveProductMutation();
   const toast = useToast();
 
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'draft' | 'archived'>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [csvOpen, setCsvOpen] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<null | {
@@ -60,25 +99,6 @@ export default function ProductsPage() {
     onConfirm: () => Promise<void> | void;
   }>(null);
 
-  const filtered = useMemo(() => {
-    return products.filter(p => {
-      if (statusFilter !== 'all' && p.status !== statusFilter) return false;
-      if (categoryFilter && p.categoryId !== categoryFilter) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        if (!p.name.toLowerCase().includes(q) && !p.sku.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [products, statusFilter, categoryFilter, search]);
-
-  const statusCounts = useMemo(() => ({
-    all: products.length,
-    active: products.filter(p => p.status === 'active').length,
-    draft: products.filter(p => p.status === 'draft').length,
-    archived: products.filter(p => p.status === 'archived').length,
-  }), [products]);
-
   const handleSelect = (id: string, checked: boolean) => {
     setSelected(s => {
       const n = new Set(s);
@@ -87,8 +107,15 @@ export default function ProductsPage() {
     });
   };
   const handleSelectAll = (checked: boolean) => {
-    setSelected(checked ? new Set(filtered.map(p => p.id)) : new Set());
+    // Select/clear the CURRENT page's rows (selection can still span pages).
+    setSelected(s => {
+      const n = new Set(s);
+      for (const p of items) { if (checked) n.add(p.id); else n.delete(p.id); }
+      return n;
+    });
   };
+
+  const afterBulk = () => { setSelected(new Set()); };
 
   const bulkArchive = () => setPendingConfirm({
     title: 'Archive products',
@@ -98,7 +125,7 @@ export default function ProductsPage() {
     onConfirm: async () => {
       await bulkUpdate({ ids: Array.from(selected), patch: { status: 'archived' } });
       toast.success(`${selected.size} products archived`);
-      setSelected(new Set());
+      afterBulk();
     },
   });
   const bulkFeature = () => setPendingConfirm({
@@ -109,7 +136,7 @@ export default function ProductsPage() {
     onConfirm: async () => {
       await bulkUpdate({ ids: Array.from(selected), patch: { isFeatured: true } });
       toast.success(`${selected.size} products featured`);
-      setSelected(new Set());
+      afterBulk();
     },
   });
   const bulkUnfeature = () => setPendingConfirm({
@@ -120,7 +147,7 @@ export default function ProductsPage() {
     onConfirm: async () => {
       await bulkUpdate({ ids: Array.from(selected), patch: { isFeatured: false } });
       toast.success(`${selected.size} products unfeatured`);
-      setSelected(new Set());
+      afterBulk();
     },
   });
   const bulkPublish = () => setPendingConfirm({
@@ -131,12 +158,15 @@ export default function ProductsPage() {
     onConfirm: async () => {
       await bulkUpdate({ ids: Array.from(selected), patch: { status: 'active' } });
       toast.success(`${selected.size} products published`);
-      setSelected(new Set());
+      afterBulk();
     },
   });
 
+  // Exports the current page (or the selected rows on it). For a full-catalog
+  // export we'd page through server-side; kept to the loaded rows for now.
   const exportCsv = () => {
-    const rows = (selected.size ? filtered.filter(p => selected.has(p.id)) : filtered).map(p => ({
+    const source = selected.size ? items.filter(p => selected.has(p.id)) : items;
+    const rows = source.map(p => ({
       sku: p.sku, name: p.name, basePrice: p.basePrice, status: p.status,
       stock: p.stock ?? '', categoryId: p.categoryId ?? '', totalSold: p.totalSold,
     }));
@@ -149,7 +179,6 @@ export default function ProductsPage() {
     downloadCSV(`products-${new Date().toISOString().slice(0, 10)}.csv`, csv);
     toast.success(`Exported ${rows.length} products`);
   };
-
 
   const columns: ResponsiveColumn<Product>[] = [
     {
@@ -220,13 +249,21 @@ export default function ProductsPage() {
     },
   ];
 
+  // Windowed page numbers: first, last, and the current ±1 (ellipsis for gaps).
+  const pageNumbers = useMemo(
+    () => Array.from({ length: totalPages }, (_, i) => i + 1).filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1),
+    [totalPages, page],
+  );
+  const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const rangeEnd = Math.min(page * perPage, total);
+
   if (isError) return <ErrorState onRetry={refetch} />;
 
   return (
     <>
       <PageHeader
         title="Products"
-        subtitle={`${products.length} total · ${statusCounts.active} active`}
+        subtitle={`${cAll.toLocaleString()} total · ${cActive.toLocaleString()} active`}
         actions={
           <>
             <Button onClick={() => setCsvOpen(true)}><Upload className="w-3.5 h-3.5" /> Bulk import</Button>
@@ -251,27 +288,27 @@ export default function ProductsPage() {
             ] as const).map(opt => (
               <button
                 key={opt.v}
-                onClick={() => setStatusFilter(opt.v)}
+                onClick={() => setParams({ status: opt.v === 'all' ? undefined : opt.v }, true)}
                 className={clsx(
                   'px-2.5 py-1 rounded text-xs transition-colors flex items-center gap-1.5',
-                  statusFilter === opt.v ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
+                  status === opt.v ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
                 )}
               >
                 {opt.label}
-                <span className="text-stone-400">{opt.count}</span>
+                <span className="text-stone-400">{opt.count.toLocaleString()}</span>
               </button>
             ))}
           </div>
           <div className="relative flex-1 min-w-[240px] max-w-md">
             <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
               placeholder="Search by name or SKU…"
               className="!pl-9"
             />
           </div>
-          <Select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="!w-auto">
+          <Select value={category} onChange={e => setParams({ category: e.target.value || undefined }, true)} className="!w-auto">
             <option value="">All categories</option>
             {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
@@ -306,23 +343,87 @@ export default function ProductsPage() {
       <Card>
         {isLoading ? (
           <TableSkeleton rows={6} columns={8} />
-        ) : filtered.length === 0 ? (
+        ) : items.length === 0 ? (
           <EmptyState
             title="No products found"
-            description={search || statusFilter !== 'all' || categoryFilter ? 'Try adjusting your filters.' : 'Start building your catalog by adding your first product.'}
+            description={qParam || status !== 'all' || category ? 'Try adjusting your filters.' : 'Start building your catalog by adding your first product.'}
             action={<Button variant="primary" onClick={() => router.push('/products/new')}><Plus className="w-3.5 h-3.5" /> Add product</Button>}
           />
         ) : (
-          <ResponsiveTable
-            columns={columns}
-            data={filtered}
-            rowKey={p => p.id}
-            selectable
-            selectedIds={selected}
-            onSelect={handleSelect}
-            onSelectAll={handleSelectAll}
-            onRowClick={(p) => router.push(`/products/${p.id}/edit`)}
-          />
+          <>
+            <ResponsiveTable
+              columns={columns}
+              data={items}
+              rowKey={p => p.id}
+              selectable
+              selectedIds={selected}
+              onSelect={handleSelect}
+              onSelectAll={handleSelectAll}
+              onRowClick={(p) => router.push(`/products/${p.id}/edit`)}
+            />
+
+            {/* Pager */}
+            <div className="flex items-center justify-between gap-3 flex-wrap border-t border-stone-200 px-4 py-3">
+              <div className="text-xs text-stone-500 tabular-nums">
+                Showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {total.toLocaleString()}
+              </div>
+
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-xs text-stone-500">
+                  Per page
+                  <Select
+                    value={String(perPage)}
+                    onChange={e => setParams({ perPage: e.target.value }, true)}
+                    className="!w-auto !py-1"
+                  >
+                    {PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                  </Select>
+                </label>
+
+                {totalPages > 1 && (
+                  <nav className="flex items-center gap-1" aria-label="Pagination">
+                    <button
+                      type="button"
+                      disabled={page <= 1}
+                      onClick={() => setParams({ page: String(page - 1) })}
+                      className="p-1.5 rounded text-stone-600 hover:bg-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    {pageNumbers.map((p, i) => {
+                      const gap = i > 0 && p - pageNumbers[i - 1] > 1;
+                      return (
+                        <span key={p} className="flex items-center">
+                          {gap && <span className="px-1 text-stone-400">…</span>}
+                          <button
+                            type="button"
+                            onClick={() => setParams({ page: String(p) })}
+                            aria-current={p === page ? 'page' : undefined}
+                            className={clsx(
+                              'min-w-[2rem] px-2 py-1 rounded text-sm tabular-nums',
+                              p === page ? 'bg-brand-700 text-white font-medium' : 'text-stone-600 hover:bg-stone-100'
+                            )}
+                          >
+                            {p}
+                          </button>
+                        </span>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      disabled={page >= totalPages}
+                      onClick={() => setParams({ page: String(page + 1) })}
+                      className="p-1.5 rounded text-stone-600 hover:bg-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      aria-label="Next page"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </nav>
+                )}
+              </div>
+            </div>
+          </>
         )}
       </Card>
 
