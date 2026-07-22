@@ -2,8 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ProductService } from '../products/product.service';
 
 // Public storefront base — product `link`s in the feed must point at pages a
-// shopper (and Meta's crawler) can actually open. Matches deploy FRONTEND_URL.
-const STOREFRONT_URL = process.env.FRONTEND_URL || 'https://shop.gaarsiiglobal.com';
+// shopper (and Meta's crawler) can actually open. FRONTEND_URL is a
+// comma-separated allow-list (storefront,seller-portal) shared with CORS, so we
+// take the first entry (the storefront) and drop any trailing slash.
+const STOREFRONT_URL = (process.env.FRONTEND_URL || 'https://shop.gaarsiiglobal.com')
+  .split(',')[0]
+  .trim()
+  .replace(/\/+$/, '');
 
 // Dev/CI image placeholder the uploads service falls back to when R2 is unset.
 // Meta rejects items whose image_link 404s, so we drop these.
@@ -22,13 +27,20 @@ export class FeedService {
   constructor(private readonly productService: ProductService) {}
 
   async generateFacebookFeed(): Promise<string> {
+    // Preload brand/category lookups once (2 queries) so per-product resolution
+    // is O(1) — avoids an N+1 populate over the whole catalog.
+    const [brandMap, categoryMap] = await Promise.all([
+      this.productService.getFeedBrandMap(),
+      this.productService.getFeedCategoryMap(),
+    ]);
+
     const cursor = this.productService.findActiveForFeedCursor();
 
     const items: string[] = [];
     let skipped = 0;
 
     for await (const product of cursor) {
-      const item = this.buildItem(product as Record<string, any>);
+      const item = this.buildItem(product as Record<string, any>, brandMap, categoryMap);
       if (item) items.push(item);
       else skipped++;
     }
@@ -56,7 +68,11 @@ export class FeedService {
    * requires (a usable image, or a positive price) — better to omit an item
    * than ship one Meta will reject.
    */
-  private buildItem(p: Record<string, any>): string | null {
+  private buildItem(
+    p: Record<string, any>,
+    brandMap: Map<string, string>,
+    categoryMap: Map<string, { name: string; googleTaxonomyId?: number }>,
+  ): string | null {
     const slug: string = p.slug;
     const name: string = p.name;
     if (!slug || !name) return null;
@@ -86,9 +102,10 @@ export class FeedService {
     const description =
       this.clean(p.description) || this.clean(p.shortDescription) || name;
 
-    const brand: string | undefined = p.brandId?.name;
-    const googleCategory = p.categoryId?.googleTaxonomyId;
-    const productType: string | undefined = p.categoryId?.name;
+    const brand = p.brandId ? brandMap.get(String(p.brandId)) : undefined;
+    const category = p.categoryId ? categoryMap.get(String(p.categoryId)) : undefined;
+    const googleCategory = category?.googleTaxonomyId;
+    const productType = category?.name;
 
     const lines: string[] = ['<item>'];
     lines.push(this.tag('g:id', slug));

@@ -285,17 +285,36 @@ export class ProductService {
 
   /**
    * Cursor over every feed-eligible product for external catalog feeds
-   * (Meta Commerce / Google Merchant). Active-only, brand + category populated.
-   * `.lean().cursor()` streams the result so a large catalog is never held in
-   * memory all at once. Not paginated — the caller consumes the whole cursor.
+   * (Meta Commerce / Google Merchant). Active-only. Brand/category are resolved
+   * by the caller via getFeedBrandMap()/getFeedCategoryMap() rather than
+   * populate() — populate on a cursor issues a query per document (N+1), which
+   * made feed generation take ~a minute. `.lean().cursor()` streams so a large
+   * catalog is never held in memory all at once.
    */
   findActiveForFeedCursor() {
-    return this.productModel
-      .find({ status: 'active' })
-      .populate('brandId', 'name')
-      .populate('categoryId', 'name path googleTaxonomyId')
-      .lean()
-      .cursor();
+    return this.productModel.find({ status: 'active' }).lean().cursor();
+  }
+
+  /** id→name map of all brands, for O(1) brand lookup during feed generation. */
+  async getFeedBrandMap(): Promise<Map<string, string>> {
+    const brands = await this.brandModel.find().select('name').lean();
+    return new Map(brands.map((b: any) => [String(b._id), b.name]));
+  }
+
+  /** id→{name,googleTaxonomyId} map of all categories, for feed generation. */
+  async getFeedCategoryMap(): Promise<
+    Map<string, { name: string; googleTaxonomyId?: number }>
+  > {
+    const cats = await this.categoryModel
+      .find()
+      .select('name googleTaxonomyId')
+      .lean();
+    return new Map(
+      cats.map((c: any) => [
+        String(c._id),
+        { name: c.name, googleTaxonomyId: c.googleTaxonomyId },
+      ]),
+    );
   }
 
   private async generateProductSlug(name: string): Promise<string> {

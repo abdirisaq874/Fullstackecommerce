@@ -15,17 +15,27 @@ function asCursor(items: any[]) {
 describe('FeedService', () => {
   let service: FeedService;
   const findActiveForFeedCursor = jest.fn();
+  const getFeedBrandMap = jest.fn();
+  const getFeedCategoryMap = jest.fn();
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FeedService,
-        { provide: ProductService, useValue: { findActiveForFeedCursor } },
+        {
+          provide: ProductService,
+          useValue: { findActiveForFeedCursor, getFeedBrandMap, getFeedCategoryMap },
+        },
       ],
     }).compile();
 
     service = module.get<FeedService>(FeedService);
     jest.clearAllMocks();
+    // Brand/category are resolved from preloaded lookup maps, keyed by id.
+    getFeedBrandMap.mockResolvedValue(new Map([['brand1', 'Nike']]));
+    getFeedCategoryMap.mockResolvedValue(
+      new Map([['cat1', { name: 'Shoes', googleTaxonomyId: 187 }]]),
+    );
   });
 
   const fullProduct = {
@@ -39,8 +49,8 @@ describe('FeedService', () => {
       { url: 'https://cdn.r2.dev/product/a/1.jpg', isPrimary: true, sortOrder: 0 },
       { url: 'https://cdn.r2.dev/product/a/2.jpg', sortOrder: 1 },
     ],
-    brandId: { name: 'Nike' },
-    categoryId: { name: 'Shoes', googleTaxonomyId: 187 },
+    brandId: 'brand1',
+    categoryId: 'cat1',
   };
 
   it('emits a valid RSS feed with the g: namespace', async () => {
@@ -95,6 +105,28 @@ describe('FeedService', () => {
     );
     const xml = await service.generateFacebookFeed();
     expect(xml).toContain('<g:title>Shoes &amp; &quot;Socks&quot; &lt;deal&gt;</g:title>');
+  });
+
+  it('uses only the first FRONTEND_URL entry (comma-separated CORS allow-list)', async () => {
+    // FRONTEND_URL bundles storefront + seller-portal for CORS; the feed must
+    // build links from the storefront (first) entry only, never the raw list.
+    jest.resetModules();
+    const prev = process.env.FRONTEND_URL;
+    process.env.FRONTEND_URL = 'https://shop.example.com,https://seller.example.com';
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { FeedService: FreshFeedService } = require('./feed.service');
+    const svc = new FreshFeedService({
+      findActiveForFeedCursor,
+      getFeedBrandMap,
+      getFeedCategoryMap,
+    });
+    findActiveForFeedCursor.mockReturnValue(asCursor([fullProduct]));
+
+    const xml = await svc.generateFacebookFeed();
+
+    expect(xml).toContain('<g:link>https://shop.example.com/product/red-shoes</g:link>');
+    expect(xml).not.toContain('seller.example.com');
+    process.env.FRONTEND_URL = prev;
   });
 
   it('skips products with no usable image', async () => {
