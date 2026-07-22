@@ -1,8 +1,11 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query,
+  Controller, Get, Post, Patch, Body, Param, Query, Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Request } from 'express';
 import { OrderService } from './order.service';
+import { OrderDocument } from './schemas/order.schema';
+import { MetaConversionsService } from '../marketing/meta-conversions.service';
 import { Auth, CurrentUser } from '../auth/guards/auth.guards';
 import { StoreScoped, ActiveStore } from '../stores/guards/store-context.guard';
 import { StoreRole } from '../stores/schemas/store-membership.schema';
@@ -85,6 +88,21 @@ class CheckoutDto {
   @IsOptional()
   @IsEnum(['card', 'mpesa', 'waafi', 'cod'])
   paymentMethod?: string;
+
+  // Meta pixel browser id (_fbp) and click id (_fbc) cookies, forwarded from
+  // the storefront so the server-side Purchase (Conversions API) can be matched
+  // to the same person and de-duplicated with the browser event.
+  @ApiPropertyOptional({ description: 'Meta _fbp cookie (browser id)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  fbp?: string;
+
+  @ApiPropertyOptional({ description: 'Meta _fbc cookie (click id)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  fbc?: string;
 }
 
 class CancelOrderDto {
@@ -98,22 +116,79 @@ class CancelOrderDto {
 @ApiTags('orders')
 @Controller('orders')
 export class OrderController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(
+    private readonly orderService: OrderService,
+    private readonly metaConversions: MetaConversionsService,
+  ) {}
 
   @Post()
   @Auth()
   @ApiOperation({ summary: 'Create order from cart (checkout)' })
   async checkout(
     @CurrentUser('_id') userId: string,
+    @CurrentUser('email') email: string,
     @Body() dto: CheckoutDto,
+    @Req() req: Request,
   ) {
-    return this.orderService.createFromCart(
+    const orders = await this.orderService.createFromCart(
       userId,
       dto.shippingAddress,
       dto.billingAddress,
       dto.notes,
       dto.paymentMethod || 'cod',
     );
+    // Mirror each order's Purchase to Meta's Conversions API (server-side,
+    // deduped with the browser pixel via event_id = order id). Fire-and-forget:
+    // the service swallows its own errors so checkout is never affected.
+    this.sendCapiPurchases(orders, dto, userId, email, req);
+    return orders;
+  }
+
+  private sendCapiPurchases(
+    orders: OrderDocument[],
+    dto: CheckoutDto,
+    userId: string,
+    email: string,
+    req: Request,
+  ): void {
+    if (!this.metaConversions.enabled || !orders?.length) return;
+    const [firstName, ...rest] = (dto.shippingAddress.fullName || '')
+      .trim()
+      .split(/\s+/);
+    const context = {
+      ip: this.clientIp(req),
+      userAgent: req.headers['user-agent'],
+      fbp: dto.fbp,
+      fbc: dto.fbc,
+    };
+    for (const order of orders) {
+      const items = order.items || [];
+      void this.metaConversions.sendPurchase({
+        eventId: String(order._id),
+        value: order.total,
+        currency: order.currency || 'USD',
+        contentIds: items.map((i) => i.slug).filter(Boolean) as string[],
+        contents: items
+          .filter((i) => i.slug)
+          .map((i) => ({ id: i.slug as string, quantity: i.quantity })),
+        numItems: items.reduce((sum, i) => sum + i.quantity, 0),
+        user: {
+          email,
+          phone: dto.shippingAddress.phone,
+          firstName,
+          lastName: rest.join(' '),
+          externalId: userId,
+        },
+        context,
+      });
+    }
+  }
+
+  // Real client IP behind Caddy — prefer the first X-Forwarded-For hop.
+  private clientIp(req: Request): string | undefined {
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff.length) return xff.split(',')[0].trim();
+    return req.ip || req.socket?.remoteAddress || undefined;
   }
 
   @Get()

@@ -7,6 +7,7 @@ import { OrderEventsListener } from './listeners/order-events.listener';
 import { Order, OrderSchema, OrderStatusHistory, OrderStatusHistorySchema } from './schemas/order.schema';
 import { CartModule } from '../cart/cart.module';
 import { StoresModule } from '../stores/stores.module';
+import { MarketingModule } from '../marketing/marketing.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { StoresModule } from '../stores/stores.module';
     ]),
     CartModule,
     StoresModule,
+    MarketingModule,
   ],
   controllers: [OrderController],
   providers: [OrderService, OrderOwnershipGuard, OrderEventsListener],

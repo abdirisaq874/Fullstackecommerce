@@ -124,7 +124,9 @@ function CheckoutView() {
     if (payment !== 'cod') { toast.error(t('couldNotPlace')); return; }
     try {
       // A multi-store cart places one order per store → an array of orders.
-      const created = await createOrder({ shippingAddress: toShippingAddress(chosen), notes: notes || undefined, paymentMethod: payment }).unwrap();
+      // Forward Meta pixel cookies so the server-side Purchase (CAPI) matches.
+      const { fbp, fbc } = metaPixel.getMetaCookies();
+      const created = await createOrder({ shippingAddress: toShippingAddress(chosen), notes: notes || undefined, paymentMethod: payment, fbp, fbc }).unwrap();
       const orders = Array.isArray(created) ? created : [created];
       if (!orders.length) { toast.error(t('couldNotPlace')); return; }
       // Land on the first order's confirmation; the rest are in the buyer's order history.

@@ -7,6 +7,9 @@ interface CreateOrderBody {
   billingAddress?: Address;
   notes?: string;
   paymentMethod?: PaymentMethod;
+  // Meta pixel cookies forwarded to the server-side Conversions API.
+  fbp?: string;
+  fbc?: string;
 }
 
 export const ordersApi = apiSlice.injectEndpoints({

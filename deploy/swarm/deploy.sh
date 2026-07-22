@@ -21,6 +21,9 @@ export STORAGE_SECRET_KEY="$(sec STORAGE_SECRET_KEY)"
 export RESEND_API_KEY="$(sec RESEND_API_KEY)"
 # Optional until the Resend webhook is registered — empty ⇒ webhook skips signature check.
 export RESEND_WEBHOOK_SECRET="$(sec RESEND_WEBHOOK_SECRET 2>/dev/null || echo '')"
+# Meta Conversions API token — optional; empty ⇒ server-side CAPI no-ops (the
+# browser pixel still fires). Add the secret then redeploy to activate CAPI.
+export META_CAPI_ACCESS_TOKEN="$(sec META_CAPI_ACCESS_TOKEN 2>/dev/null || echo '')"
 
 # Refresh Artifact Registry auth (token via the VM's metadata SA) and deploy.
 gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
