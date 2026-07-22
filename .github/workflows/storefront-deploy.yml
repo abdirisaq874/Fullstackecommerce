@@ -39,6 +39,8 @@ jobs:
             --build-arg NEXT_PUBLIC_SITE_NAME="${{ vars.NEXT_PUBLIC_SITE_NAME }}" \
             --build-arg NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="${{ vars.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}" \
             --build-arg NEXT_PUBLIC_META_PIXEL_ID="${{ vars.NEXT_PUBLIC_META_PIXEL_ID }}" \
+            --build-arg NEXT_PUBLIC_OPENREPLAY_PROJECT_KEY="${{ vars.NEXT_PUBLIC_OPENREPLAY_PROJECT_KEY }}" \
+            --build-arg NEXT_PUBLIC_OPENREPLAY_INGEST_POINT="${{ vars.NEXT_PUBLIC_OPENREPLAY_INGEST_POINT }}" \
             -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" ./storefront
           docker push "$IMAGE:${{ github.sha }}"
           docker push "$IMAGE:latest"

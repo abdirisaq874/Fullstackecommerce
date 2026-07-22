@@ -7,6 +7,7 @@ import { store, useAppDispatch, useAppSelector } from '@/store';
 import { hydrate, logout } from '@/store/slices/authSlice';
 import { hydrateWishlist } from '@/store/slices/wishlistSlice';
 import { authApi } from '@/store/api/authApi';
+import { OpenReplay } from '@/components/OpenReplay';
 
 function Bootstrap() {
   const dispatch = useAppDispatch();
@@ -39,6 +40,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <Provider store={store}>
       <Bootstrap />
+      <OpenReplay />
       {children}
       <Toaster position="top-center" richColors closeButton />
     </Provider>
