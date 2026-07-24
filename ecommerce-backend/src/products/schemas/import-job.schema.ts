@@ -22,7 +22,7 @@ export class ImportJob {
 
   @Prop() filename?: string;
 
-  @Prop({ enum: ['processing', 'completed', 'failed'], default: 'processing', index: true })
+  @Prop({ enum: ['processing', 'completed', 'failed', 'cancelled'], default: 'processing', index: true })
   status: string;
 
   @Prop({ default: 0 }) total: number;

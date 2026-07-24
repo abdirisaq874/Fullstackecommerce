@@ -56,4 +56,11 @@ export class ProductImportController {
   async retry(@Param('jobId') jobId: string, @ActiveStore('storeId') storeId: string) {
     return this.importService.retryFailed(jobId, storeId);
   }
+
+  @Post('import/:jobId/cancel')
+  @StoreScoped(StoreRole.STAFF)
+  @ApiOperation({ summary: 'Cancel an in-progress bulk-import (skips remaining products)' })
+  async cancel(@Param('jobId') jobId: string, @ActiveStore('storeId') storeId: string) {
+    return this.importService.cancelJob(jobId, storeId);
+  }
 }

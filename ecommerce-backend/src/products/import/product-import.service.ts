@@ -73,6 +73,22 @@ export class ProductImportService {
   }
 
   /**
+   * Cancel an in-progress import. Flips the job to `cancelled`; the per-product
+   * workers see this and skip every remaining queued product (products already
+   * created stay). No-op if the job is already finished.
+   */
+  async cancelJob(jobId: string, sellerId: string): Promise<ImportJob> {
+    if (!Types.ObjectId.isValid(jobId)) throw new NotFoundException('Import job not found');
+    const job = await this.jobModel.findOne({ _id: jobId, sellerId: new Types.ObjectId(sellerId) });
+    if (!job) throw new NotFoundException('Import job not found');
+    if (job.status === 'processing') {
+      job.status = 'cancelled';
+      await job.save();
+    }
+    return job.toObject();
+  }
+
+  /**
    * Recent import jobs for a seller. Excludes the heavy `failedItems` payloads —
    * exposes only their count (`retriableCount`) so the portal can show a
    * "Retry failed" affordance without shipping every product back.

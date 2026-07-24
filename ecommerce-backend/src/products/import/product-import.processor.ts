@@ -39,6 +39,12 @@ export class ProductImportProcessor extends WorkerHost {
   async process(job: Job<ImportProductJob>): Promise<void> {
     if (job.name !== IMPORT_PRODUCT_JOB) return;
     const { jobId, sellerId, product } = job.data;
+
+    // If the seller cancelled this import, skip every remaining queued product
+    // (products already created stay). Cheap status check before any image/AI work.
+    const parent = await this.jobModel.findById(jobId).select('status').lean();
+    if (!parent || parent.status === 'cancelled') return;
+
     try {
       // 1. Rehost images → R2 (retry transient timeouts; keep only successes).
       //    Tag each image with the COLOUR it belongs to (altText = colour value)

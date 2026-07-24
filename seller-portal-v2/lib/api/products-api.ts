@@ -36,7 +36,7 @@ export interface ImportRowError {
 /** Live status of a bulk product-import job (GET /products/import/:jobId). */
 export interface ImportJob {
   _id: string;
-  status: 'processing' | 'completed' | 'failed';
+  status: 'processing' | 'completed' | 'failed' | 'cancelled';
   total: number;
   processed: number;
   created: number;
@@ -283,6 +283,14 @@ export const productsApi = baseApi.injectEndpoints({
       transformResponse: (res: ResponseEnvelope<{ jobId: string; total: number }> | { jobId: string; total: number }) => unwrapEnvelope(res),
       invalidatesTags: [{ type: 'Import', id: 'LIST' }, { type: 'Product', id: 'LIST' }],
     }),
+
+    // Cancel an in-progress import — flips the job to 'cancelled'; the backend
+    // workers skip the remaining products (already-created ones stay).
+    cancelImport: builder.mutation<ImportJob, string>({
+      query: (jobId) => ({ url: `/products/import/${jobId}/cancel`, method: 'POST' }),
+      transformResponse: (res: ResponseEnvelope<ImportJob> | ImportJob) => unwrapEnvelope<ImportJob>(res),
+      invalidatesTags: [{ type: 'Import', id: 'LIST' }],
+    }),
   }),
 });
 
@@ -300,4 +308,5 @@ export const {
   useGetImportJobQuery,
   useListImportsQuery,
   useRetryImportMutation,
+  useCancelImportMutation,
 } = productsApi;
