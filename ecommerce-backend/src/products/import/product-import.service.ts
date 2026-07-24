@@ -73,19 +73,47 @@ export class ProductImportService {
   }
 
   /**
-   * Cancel an in-progress import. Flips the job to `cancelled`; the per-product
-   * workers see this and skip every remaining queued product (products already
-   * created stay). No-op if the job is already finished.
+   * Cancel an in-progress import. Flips the job to `cancelled` AND removes its
+   * still-queued per-product jobs from the queue, so the import stops (almost)
+   * immediately instead of grinding through the backlog. Products already
+   * created stay. No-op if the job is already finished.
    */
   async cancelJob(jobId: string, sellerId: string): Promise<ImportJob> {
     if (!Types.ObjectId.isValid(jobId)) throw new NotFoundException('Import job not found');
     const job = await this.jobModel.findOne({ _id: jobId, sellerId: new Types.ObjectId(sellerId) });
     if (!job) throw new NotFoundException('Import job not found');
+
+    // Flip status first: any worker that grabs a straggler skips it, and the
+    // counters stop advancing toward "completed".
     if (job.status === 'processing') {
       job.status = 'cancelled';
       await job.save();
     }
+
+    // Hard stop: drop this import's not-yet-started jobs from the queue so they
+    // never run. Only a handful already in-flight need to drain.
+    await this.drainQueuedProducts(jobId);
+
     return job.toObject();
+  }
+
+  /**
+   * Remove the not-yet-started queue jobs belonging to one import. Best-effort:
+   * the `cancelled` status flag is the real guarantee; this just clears the
+   * backlog so the store stops filling. Active (in-flight) jobs are left to
+   * finish — they can't be removed while locked.
+   */
+  private async drainQueuedProducts(jobId: string): Promise<void> {
+    try {
+      const pending = await this.queue.getJobs(['waiting', 'delayed', 'prioritized', 'paused']);
+      await Promise.all(
+        pending
+          .filter((j) => j?.name === IMPORT_PRODUCT_JOB && j.data?.jobId === jobId)
+          .map((j) => j.remove().catch(() => undefined)),
+      );
+    } catch {
+      // best-effort — the status flag still stops product creation
+    }
   }
 
   /**

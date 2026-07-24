@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import { Modal } from '@/components/primitives/modal';
 import { Button } from '@/components/primitives/button';
 import { Alert } from '@/components/primitives/alert';
-import { useImportProductsMutation, useGetImportJobQuery, useCancelImportMutation } from '@/lib/api';
+import { useImportProductsMutation, useGetImportJobQuery } from '@/lib/api';
 import { useToast } from '@/lib/hooks/use-toast';
 
 const ACCEPT =
@@ -66,7 +66,6 @@ export function BulkImportModal({
   const toast = useToast();
 
   const [importProducts, { isLoading: uploading }] = useImportProductsMutation();
-  const [cancelImport, { isLoading: cancelling }] = useCancelImportMutation();
   const { data: job } = useGetImportJobQuery(jobId ?? '', {
     skip: !jobId || finished,
     pollingInterval: 1500,
@@ -110,17 +109,6 @@ export function BulkImportModal({
       );
     } catch (e) {
       const msg = (e as { data?: { message?: string } })?.data?.message || 'Import failed to start';
-      toast.error(msg);
-    }
-  };
-
-  const onCancel = async () => {
-    if (!jobId) return;
-    try {
-      await cancelImport(jobId).unwrap();
-      toast.info('Cancelling — remaining products will be skipped (created ones stay).');
-    } catch (e) {
-      const msg = (e as { data?: { message?: string } })?.data?.message || 'Could not cancel import';
       toast.error(msg);
     }
   };
@@ -242,16 +230,9 @@ export function BulkImportModal({
             </Button>
           </>
         ) : (
-          <>
-            {!done && (
-              <Button variant="danger-ghost" onClick={onCancel} disabled={cancelling}>
-                {cancelling ? 'Cancelling…' : 'Cancel import'}
-              </Button>
-            )}
-            <Button variant={done ? 'primary' : 'secondary'} onClick={handleClose}>
-              {done ? 'Done' : 'Close (keeps running)'}
-            </Button>
-          </>
+          <Button variant={done ? 'primary' : 'secondary'} onClick={handleClose}>
+            {done ? 'Done' : 'Close (keeps running)'}
+          </Button>
         )}
       </div>
     </Modal>

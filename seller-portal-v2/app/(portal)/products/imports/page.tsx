@@ -2,19 +2,20 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCcw, RotateCcw, ChevronDown, ChevronRight, ArrowLeft } from 'lucide-react';
+import { RefreshCcw, RotateCcw, ChevronDown, ChevronRight, ArrowLeft, Ban } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/primitives/card';
 import { Button } from '@/components/primitives/button';
 import { Badge } from '@/components/primitives/badge';
 import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
-import { useListImportsQuery, useRetryImportMutation, type ImportJob } from '@/lib/api';
+import { useListImportsQuery, useRetryImportMutation, useCancelImportMutation, type ImportJob } from '@/lib/api';
 import { useToast } from '@/lib/hooks/use-toast';
 import clsx from 'clsx';
 
 function statusBadge(status: ImportJob['status']) {
   if (status === 'completed') return <Badge variant="success">Completed</Badge>;
   if (status === 'failed') return <Badge variant="danger">Failed</Badge>;
+  if (status === 'cancelled') return <Badge variant="neutral">Cancelled</Badge>;
   return <Badge variant="warning">Processing…</Badge>;
 }
 
@@ -23,6 +24,7 @@ export default function ImportHistoryPage() {
   const toast = useToast();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
 
   const { data: jobs = [], isLoading, isError, refetch, isFetching } = useListImportsQuery();
   // While anything is still processing, poll so counters/progress update live.
@@ -30,6 +32,7 @@ export default function ImportHistoryPage() {
   useListImportsQuery(undefined, { pollingInterval: anyProcessing ? 3000 : 0, skip: !anyProcessing });
 
   const [retryImport] = useRetryImportMutation();
+  const [cancelImport] = useCancelImportMutation();
 
   const toggle = (id: string) =>
     setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -43,6 +46,19 @@ export default function ImportHistoryPage() {
       toast.error((e as { data?: { message?: string } })?.data?.message || 'Could not start retry');
     } finally {
       setRetrying(null);
+    }
+  };
+
+  const onCancel = async (job: ImportJob) => {
+    setCancelling(job._id);
+    try {
+      await cancelImport(job._id).unwrap();
+      toast.info('Import stopped — queued products removed; created ones stay.');
+      refetch();
+    } catch (e) {
+      toast.error((e as { data?: { message?: string } })?.data?.message || 'Could not stop import');
+    } finally {
+      setCancelling(null);
     }
   };
 
@@ -104,6 +120,17 @@ export default function ImportHistoryPage() {
                   </div>
 
                   {statusBadge(job.status)}
+
+                  {job.status === 'processing' && (
+                    <Button
+                      variant="danger-ghost"
+                      onClick={() => onCancel(job)}
+                      disabled={cancelling === job._id}
+                    >
+                      <Ban className="w-3.5 h-3.5" />
+                      {cancelling === job._id ? 'Stopping…' : 'Stop'}
+                    </Button>
+                  )}
 
                   {canRetry && (
                     <Button
