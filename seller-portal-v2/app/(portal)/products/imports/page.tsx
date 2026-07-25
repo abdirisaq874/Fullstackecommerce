@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCcw, RotateCcw, ChevronDown, ChevronRight, ArrowLeft, Ban } from 'lucide-react';
+import { RefreshCcw, RotateCcw, ChevronDown, ChevronRight, ArrowLeft, Ban, Wrench } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/primitives/card';
 import { Button } from '@/components/primitives/button';
 import { Badge } from '@/components/primitives/badge';
 import { TableSkeleton, EmptyState, ErrorState } from '@/components/data/states';
-import { useListImportsQuery, useRetryImportMutation, useCancelImportMutation, type ImportJob } from '@/lib/api';
+import { useListImportsQuery, useRetryImportMutation, useCancelImportMutation, useCleanImageUrlsMutation, type ImportJob } from '@/lib/api';
 import { useToast } from '@/lib/hooks/use-toast';
 import clsx from 'clsx';
 
@@ -33,6 +33,7 @@ export default function ImportHistoryPage() {
 
   const [retryImport] = useRetryImportMutation();
   const [cancelImport] = useCancelImportMutation();
+  const [cleanImageUrls, { isLoading: cleaning }] = useCleanImageUrlsMutation();
 
   const toggle = (id: string) =>
     setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -62,6 +63,20 @@ export default function ImportHistoryPage() {
     }
   };
 
+  const onCleanImages = async () => {
+    if (!window.confirm('Scan this store’s products and fix image URLs saved with a trailing comma (which show as broken swatches/thumbnails)? This is safe and can be run again.')) return;
+    try {
+      const res = await cleanImageUrls().unwrap();
+      toast.success(
+        res.changed
+          ? `Fixed ${res.cleaned} image URL${res.cleaned === 1 ? '' : 's'} across ${res.changed} product${res.changed === 1 ? '' : 's'}. Hard-refresh the storefront to see them.`
+          : 'All image URLs are already clean — nothing to fix.',
+      );
+    } catch (e) {
+      toast.error((e as { data?: { message?: string } })?.data?.message || 'Could not run image cleanup');
+    }
+  };
+
   const subtitle = useMemo(() => `${jobs.length} import${jobs.length === 1 ? '' : 's'}`, [jobs.length]);
 
   return (
@@ -72,6 +87,9 @@ export default function ImportHistoryPage() {
         actions={
           <>
             <Button onClick={() => router.push('/products')}><ArrowLeft className="w-3.5 h-3.5" /> Products</Button>
+            <Button onClick={onCleanImages} disabled={cleaning}>
+              <Wrench className={clsx('w-3.5 h-3.5', cleaning && 'animate-spin')} /> {cleaning ? 'Fixing…' : 'Fix image URLs'}
+            </Button>
             <Button onClick={() => refetch()} disabled={isFetching}>
               <RefreshCcw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Refresh
             </Button>

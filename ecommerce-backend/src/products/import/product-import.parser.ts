@@ -92,11 +92,16 @@ function readAttributes(s: string): { key: string; value: string }[] {
     .filter((x): x is { key: string; value: string } => !!x && !!x.key && !!x.value);
 }
 
+/** Trim and strip trailing separators (comma/semicolon) that CSV exports glue
+ *  onto URLs — a URL never legitimately ends in "," or ";". Without this, a
+ *  value like ".../1_org_zoom.jpg," is kept verbatim and 404s (broken image). */
+const cleanUrl = (u: string): string => (u || '').trim().replace(/[;,]+$/, '').trim();
+
 function readUrls(s: string): string[] {
   if (!s) return [];
   return s
     .split(/[|\n]/)
-    .map((u) => u.trim())
+    .map((u) => cleanUrl(u))
     .filter((u) => /^https?:\/\//i.test(u));
 }
 
@@ -145,7 +150,7 @@ export function parseImportFile(buffer: Buffer): ParseResult {
 
     const options = readOptions(r);
     const variantSku = r['variantsku'];
-    const variantImage = r['variantimageurl'];
+    const variantImage = cleanUrl(r['variantimageurl']);
     if (options.length || variantSku) {
       p.variants.push({
         sku: variantSku || undefined,
