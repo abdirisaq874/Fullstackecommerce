@@ -80,10 +80,16 @@ export class CatalogSearchService {
     // 2) Parallel retrieval + facets (facets get the text query too, so they
     //    reflect the actual results — not the whole catalog).
     const cleaned = understood?.cleaned || q || '';
+    // Embed the English (translated) query for the vector arm. English is the
+    // highest-resource language for the embedder, and using it makes semantic
+    // search CONSISTENT across query languages — a Somali/Turkish query and its
+    // English equivalent embed to (nearly) the same vector → same results.
+    // Falls back to the cleaned original when QU is off / produced no English.
+    const vectorQuery = understood?.queries?.en || cleaned;
     const textShould = this.retrieval.buildTextShould(queries, locale);
     const [lexical, vectorHits, facets] = await Promise.all([
       this.retrieval.lexical(queries, filters, category, CANDIDATE_SIZE, locale),
-      this.retrieveVector(cleaned, filters, category),
+      this.retrieveVector(vectorQuery, filters, category),
       this.facets.compute(filters, category, locale, textShould),
     ]);
 
