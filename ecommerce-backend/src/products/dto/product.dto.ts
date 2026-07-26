@@ -18,6 +18,9 @@ export class CreateVariantDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() costPrice?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() weightGrams?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() barcode?: string;
+  // Per-variant stock. Not stored on the variant sub-doc — persisted to the
+  // Inventory collection (per-SKU) via the product.stock_set event.
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) stock?: number;
 
   @ApiPropertyOptional({ type: [VariantOptionDto] })
   @IsOptional() @IsArray() @ValidateNested({ each: true })
@@ -30,6 +33,13 @@ export class CreateImageDto {
   @ApiPropertyOptional() @IsOptional() @IsString() altText?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isPrimary?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsNumber() sortOrder?: number;
+  // Structured variant-image association: this image applies to variants whose
+  // options include EVERY {name,value} here (e.g. [{Color,White}] or
+  // [{Material,Cotton},{Sleeve,Long}]). Empty/absent = a shared/general image.
+  @ApiPropertyOptional({ type: [VariantOptionDto] })
+  @IsOptional() @IsArray() @ValidateNested({ each: true })
+  @Type(() => VariantOptionDto)
+  appliesTo?: VariantOptionDto[];
 }
 
 export class AttributeDto {

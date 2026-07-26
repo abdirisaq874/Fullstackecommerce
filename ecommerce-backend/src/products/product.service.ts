@@ -44,8 +44,25 @@ export class ProductService {
       name: product.name,
       sellerId,
     });
+    await this.syncVariantStock(product._id.toString(), (dto as any).variants);
 
     return product;
+  }
+
+  /**
+   * Persist per-variant stock to the Inventory collection (per SKU). The variant
+   * sub-doc has no stock field, so this is the only place variant stock is stored.
+   * Fire-and-forget via an event so Products stays decoupled from Inventory.
+   */
+  private async syncVariantStock(
+    productId: string,
+    variants?: Array<{ sku?: string; stock?: number }>,
+  ): Promise<void> {
+    if (!Array.isArray(variants)) return;
+    const items = variants
+      .filter((v) => v?.sku && typeof v.stock === 'number')
+      .map((v) => ({ sku: v.sku as string, quantity: v.stock as number }));
+    if (items.length) await this.eventBus.emit('product.stock_set', { productId, items });
   }
 
   /**
@@ -225,6 +242,7 @@ export class ProductService {
       productId: id,
       changes: Object.keys(dto),
     });
+    await this.syncVariantStock(id, (dto as any).variants);
 
     return product;
   }

@@ -98,6 +98,10 @@ export class ProductImage {
   @Prop({ required: true }) url: string;
   @Prop() altText?: string;
   @Prop({ type: Types.ObjectId }) variantId?: Types.ObjectId;
+  // Structured variant-image association: image applies to variants whose options
+  // include EVERY {name,value} here. [] / absent = shared image (all variants).
+  @Prop({ type: [{ name: String, value: String }], default: undefined })
+  appliesTo?: { name: string; value: string }[];
   @Prop({ default: false }) isPrimary: boolean;
   @Prop({ default: 0 }) sortOrder: number;
 }

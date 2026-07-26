@@ -204,6 +204,31 @@ export class InventoryService {
     return inv!;
   }
 
+  /**
+   * Set the absolute on-hand quantity for a variant SKU (create the record if it
+   * doesn't exist yet). Used by product create/update/import so per-variant stock
+   * entered by the seller is actually persisted — reserved is preserved.
+   */
+  async setStock(variantSku: string, productId: string, quantity: number): Promise<void> {
+    if (!variantSku) return;
+    const q = Math.max(0, Math.floor(Number(quantity) || 0));
+    await this.inventoryModel.updateOne(
+      { variantSku },
+      {
+        $set: { quantity: q, productId: new Types.ObjectId(productId) },
+        $setOnInsert: { reserved: 0 },
+      },
+      { upsert: true },
+    );
+  }
+
+  /** SKUs (from the given list) that already have an inventory record. */
+  async trackedSkus(skus: string[]): Promise<string[]> {
+    if (!skus?.length) return [];
+    const rows = await this.inventoryModel.find({ variantSku: { $in: skus } }).select('variantSku').lean();
+    return rows.map((r: any) => r.variantSku);
+  }
+
   async getStockLevels(productId: string, storeId?: string): Promise<Inventory[]> {
     // When scoped to a store (seller call), the product must belong to it.
     if (storeId) {

@@ -59,6 +59,22 @@ export class InventoryEventsListener {
     await this.inventoryService.release(payload.items, payload.orderId);
   }
 
+  // Persist per-variant stock set on product create/update (per-SKU Inventory).
+  @OnEvent('product.stock_set')
+  async handleStockSet(payload: {
+    productId: string;
+    items: { sku: string; quantity: number }[];
+  }) {
+    if (!payload.items?.length) return;
+    for (const it of payload.items) {
+      try {
+        await this.inventoryService.setStock(it.sku, payload.productId, it.quantity);
+      } catch (e: any) {
+        this.logger.error(`setStock failed for ${it.sku}: ${e.message}`);
+      }
+    }
+  }
+
   @OnEvent('refund.processed')
   async handleRefundProcessed(payload: {
     orderId: string;
