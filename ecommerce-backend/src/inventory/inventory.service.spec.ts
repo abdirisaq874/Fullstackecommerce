@@ -3,10 +3,15 @@ import { getModelToken } from '@nestjs/mongoose';
 import { BadRequestException } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { Inventory, InventoryMovement } from './schemas/inventory.schema';
+import { Product } from '../products/schemas/product.schema';
 import { EventBusService } from '../shared/events/event-bus.service';
 
 describe('InventoryService', () => {
   let service: InventoryService;
+  // Valid ObjectId hex strings — inventory now scopes matches by productId, which
+  // is constructed via new Types.ObjectId(...) and would throw on a non-hex value.
+  const PID1 = '607f1f77bcf86cd799439aa1';
+  const PID2 = '607f1f77bcf86cd799439aa2';
 
   const mockInventoryModel = {
     aggregate: jest.fn(),
@@ -16,6 +21,10 @@ describe('InventoryService', () => {
 
   const mockMovementModel = {
     create: jest.fn().mockResolvedValue({}),
+  };
+
+  const mockProductModel = {
+    findById: jest.fn(),
   };
 
   const mockEventBus = {
@@ -28,6 +37,7 @@ describe('InventoryService', () => {
         InventoryService,
         { provide: getModelToken(Inventory.name), useValue: mockInventoryModel },
         { provide: getModelToken(InventoryMovement.name), useValue: mockMovementModel },
+        { provide: getModelToken(Product.name), useValue: mockProductModel },
         { provide: EventBusService, useValue: mockEventBus },
       ],
     }).compile();
@@ -69,7 +79,7 @@ describe('InventoryService', () => {
       });
 
       const items = [
-        { variantSku: 'SKU-001', productId: 'prod_001', quantity: 3 },
+        { variantSku: 'SKU-001', productId: PID1, quantity: 3 },
       ];
 
       await service.reserve(items, '607f1f77bcf86cd799439022');
@@ -95,8 +105,8 @@ describe('InventoryService', () => {
         .mockResolvedValueOnce(null); // Insufficient stock
 
       const items = [
-        { variantSku: 'SKU-001', productId: 'prod_001', quantity: 2 },
-        { variantSku: 'SKU-002', productId: 'prod_002', quantity: 5 },
+        { variantSku: 'SKU-001', productId: PID1, quantity: 2 },
+        { variantSku: 'SKU-002', productId: PID2, quantity: 5 },
       ];
 
       await expect(service.reserve(items, '607f1f77bcf86cd799439022')).rejects.toThrow(BadRequestException);
@@ -118,12 +128,12 @@ describe('InventoryService', () => {
       const findOneMock = jest.fn().mockResolvedValue({ quantity: 95, reorderPoint: 10 });
       (mockInventoryModel as any).findOne = findOneMock;
 
-      const items = [{ variantSku: 'SKU-001', productId: 'prod_001', quantity: 3 }];
+      const items = [{ variantSku: 'SKU-001', productId: PID1, quantity: 3 }];
 
       await service.deduct(items, '607f1f77bcf86cd799439022');
 
       expect(mockInventoryModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { variantSku: 'SKU-001', reserved: { $gte: 3 } },
+        expect.objectContaining({ variantSku: 'SKU-001', reserved: { $gte: 3 } }),
         { $inc: { quantity: -3, reserved: -3 } },
       );
       expect(mockEventBus.emit).toHaveBeenCalledWith('inventory.deducted', expect.any(Object));
@@ -138,7 +148,7 @@ describe('InventoryService', () => {
       const findOneMock = jest.fn().mockResolvedValue({ quantity: 5, reorderPoint: 10 });
       (mockInventoryModel as any).findOne = findOneMock;
 
-      const items = [{ variantSku: 'SKU-001', productId: 'prod_001', quantity: 3 }];
+      const items = [{ variantSku: 'SKU-001', productId: PID1, quantity: 3 }];
 
       await service.deduct(items, '607f1f77bcf86cd799439022');
 
@@ -152,12 +162,12 @@ describe('InventoryService', () => {
   describe('restock (C6 — refund returns stock)', () => {
     it('adds quantity back and records a returned movement', async () => {
       mockInventoryModel.findOneAndUpdate.mockResolvedValue({ variantSku: 'SKU-001' });
-      const items = [{ variantSku: 'SKU-001', productId: 'prod_001', quantity: 3 }];
+      const items = [{ variantSku: 'SKU-001', productId: PID1, quantity: 3 }];
 
       await service.restock(items, '607f1f77bcf86cd799439022');
 
       expect(mockInventoryModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { variantSku: 'SKU-001' },
+        expect.objectContaining({ variantSku: 'SKU-001' }),
         { $inc: { quantity: 3 } },
       );
       expect(mockMovementModel.create).toHaveBeenCalledWith(

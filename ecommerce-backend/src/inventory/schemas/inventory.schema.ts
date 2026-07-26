@@ -13,7 +13,10 @@ export class Inventory {
   @Prop({ type: Number, default: 10 }) reorderPoint: number;
 }
 export const InventorySchema = SchemaFactory.createForClass(Inventory);
-InventorySchema.index({ variantSku: 1, warehouseId: 1 }, { unique: true });
+// Unique per (product, SKU, warehouse). productId is FIRST because supplier SKUs
+// are not unique across sellers in a marketplace — two products may legitimately
+// share a variantSku, each owning its own inventory row.
+InventorySchema.index({ productId: 1, variantSku: 1, warehouseId: 1 }, { unique: true });
 
 export type InventoryMovementDocument = HydratedDocument<InventoryMovement>;
 

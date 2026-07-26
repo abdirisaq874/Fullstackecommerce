@@ -10,6 +10,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 class AdjustStockDto {
   @ApiProperty() @IsString() variantSku: string;
   @ApiProperty() @IsNumber() quantity: number;
+  // Which listing's stock to adjust — supplier SKUs aren't seller-unique, so a SKU
+  // alone can be ambiguous. Optional for back-compat with single-listing SKUs.
+  @ApiPropertyOptional() @IsOptional() @IsString() productId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() notes?: string;
 }
 
@@ -69,7 +72,7 @@ export class InventoryController {
     @CurrentUser('_id') userId: string,
   ) {
     return this.inventoryService.adjust(
-      dto.variantSku, dto.quantity, dto.notes || '', userId,
+      dto.variantSku, dto.quantity, dto.notes || '', userId, dto.productId,
     );
   }
 }

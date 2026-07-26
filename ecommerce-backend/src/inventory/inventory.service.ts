@@ -22,10 +22,13 @@ export class InventoryService {
     private eventBus: EventBusService,
   ) {}
 
-  async checkStock(variantSku: string): Promise<number> {
-    // Use aggregation for an atomic, single-query stock check
+  async checkStock(variantSku: string, productId?: string): Promise<number> {
+    // Scope by productId when known: supplier SKUs are NOT unique across sellers in
+    // a marketplace, so two products can share a variantSku — each has its own row.
+    const match: Record<string, unknown> = { variantSku };
+    if (productId) match.productId = new Types.ObjectId(productId);
     const result = await this.inventoryModel.aggregate([
-      { $match: { variantSku } },
+      { $match: match },
       {
         $group: {
           _id: null,
@@ -49,6 +52,7 @@ export class InventoryService {
       const result = await this.inventoryModel.findOneAndUpdate(
         {
           variantSku: item.variantSku,
+          ...(item.productId ? { productId: new Types.ObjectId(item.productId) } : {}),
           $expr: { $gte: [{ $subtract: ['$quantity', '$reserved'] }, item.quantity] },
         },
         { $inc: { reserved: item.quantity } },
@@ -86,7 +90,11 @@ export class InventoryService {
     }
     for (const item of items) {
       const updated = await this.inventoryModel.findOneAndUpdate(
-        { variantSku: item.variantSku, reserved: { $gte: item.quantity } },
+        {
+          variantSku: item.variantSku,
+          ...(item.productId ? { productId: new Types.ObjectId(item.productId) } : {}),
+          reserved: { $gte: item.quantity },
+        },
         { $inc: { quantity: -item.quantity, reserved: -item.quantity } },
       );
       if (!updated) {
@@ -102,7 +110,10 @@ export class InventoryService {
       });
 
       // Check low stock
-      const inv = await this.inventoryModel.findOne({ variantSku: item.variantSku });
+      const inv = await this.inventoryModel.findOne({
+        variantSku: item.variantSku,
+        ...(item.productId ? { productId: new Types.ObjectId(item.productId) } : {}),
+      });
       if (inv && inv.quantity <= inv.reorderPoint) {
         await this.eventBus.emit('inventory.low', {
           variantSku: item.variantSku,
@@ -126,7 +137,10 @@ export class InventoryService {
     }
     for (const item of items) {
       await this.inventoryModel.findOneAndUpdate(
-        { variantSku: item.variantSku },
+        {
+          variantSku: item.variantSku,
+          ...(item.productId ? { productId: new Types.ObjectId(item.productId) } : {}),
+        },
         { $inc: { quantity: item.quantity } },
       );
 
@@ -156,13 +170,14 @@ export class InventoryService {
 
   private async releaseReservations(items: ReserveItem[], orderId: string): Promise<void> {
     for (const item of items) {
+      const pidMatch = item.productId ? { productId: new Types.ObjectId(item.productId) } : {};
       const updated = await this.inventoryModel.findOneAndUpdate(
-        { variantSku: item.variantSku, reserved: { $gte: item.quantity } },
+        { variantSku: item.variantSku, ...pidMatch, reserved: { $gte: item.quantity } },
         { $inc: { reserved: -item.quantity } },
       );
       if (!updated) {
         await this.inventoryModel.updateOne(
-          { variantSku: item.variantSku },
+          { variantSku: item.variantSku, ...pidMatch },
           { $set: { reserved: 0 } },
         );
       }
@@ -185,9 +200,10 @@ export class InventoryService {
     quantity: number,
     notes: string,
     userId: string,
+    productId?: string,
   ): Promise<Inventory> {
     const inv = await this.inventoryModel.findOneAndUpdate(
-      { variantSku },
+      { variantSku, ...(productId ? { productId: new Types.ObjectId(productId) } : {}) },
       { $inc: { quantity } },
       { new: true, upsert: true },
     );
@@ -210,14 +226,13 @@ export class InventoryService {
    * entered by the seller is actually persisted — reserved is preserved.
    */
   async setStock(variantSku: string, productId: string, quantity: number): Promise<void> {
-    if (!variantSku) return;
+    if (!variantSku || !productId) return;
     const q = Math.max(0, Math.floor(Number(quantity) || 0));
+    // Key on (productId, variantSku): each seller's listing owns its own row even
+    // when they share a supplier SKU. The filter fields seed the doc on insert.
     await this.inventoryModel.updateOne(
-      { variantSku },
-      {
-        $set: { quantity: q, productId: new Types.ObjectId(productId) },
-        $setOnInsert: { reserved: 0 },
-      },
+      { variantSku, productId: new Types.ObjectId(productId) },
+      { $set: { quantity: q }, $setOnInsert: { reserved: 0 } },
       { upsert: true },
     );
   }
