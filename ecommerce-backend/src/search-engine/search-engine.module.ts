@@ -18,6 +18,7 @@ import { EmbeddingsService } from './providers/embeddings.service';
 import { TranslationService } from './providers/translation.service';
 import { RerankService } from './providers/rerank.service';
 import { QueryUnderstandingService } from './providers/query-understanding.service';
+import { ProductNormalizationService } from '../products/product-normalization.service';
 
 import { IndexingService } from './indexing/indexing.service';
 import { IndexingProcessor, SEARCH_INDEXING_QUEUE } from './indexing/indexing.processor';
@@ -52,6 +53,7 @@ import { CatalogSearchController } from './catalog-search.controller';
     TranslationService,
     RerankService,
     QueryUnderstandingService,
+    ProductNormalizationService,
     // indexing
     IndexingService,
     IndexingProcessor,
@@ -62,6 +64,6 @@ import { CatalogSearchController } from './catalog-search.controller';
     SearchLogService,
     CatalogSearchService,
   ],
-  exports: [IndexingService, IndexAdminService, RetrievalService, EmbeddingsService],
+  exports: [IndexingService, IndexAdminService, RetrievalService, EmbeddingsService, ProductNormalizationService],
 })
 export class SearchEngineModule {}

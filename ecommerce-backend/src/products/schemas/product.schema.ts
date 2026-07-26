@@ -169,6 +169,11 @@ export class Product {
   @Prop() embeddingInput?: string; // hash of source text → skip re-embed when unchanged
   @Prop() embeddedAt?: Date;
 
+  // ─── English-canonical normalization provenance (Turkish → English) ───
+  @Prop() normalizedAt?: Date; // set once normalized; makes backfill resumable
+  @Prop({ type: [{ key: String, value: String }], default: undefined, select: false })
+  rawAttributes?: { key: string; value: string }[]; // original (pre-normalization) attributes
+
   // ─── Denormalized ranking signals (refreshed by a job) ───
   @Prop({ type: Object, default: {} })
   searchSignals: { popularity?: number; salesVelocity?: number; lastOrderedAt?: Date };
