@@ -1100,24 +1100,27 @@ function ImagesSection({
                           className="w-full px-2 py-1 text-xs bg-white border border-stone-200 rounded outline-none focus:border-brand-600 mb-1.5"
                         />
                         {variantDims.length > 0 && (
-                          <select
-                            value={img.appliesTo?.[0] ? `${img.appliesTo[0].name}::${img.appliesTo[0].value}` : ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              updateAppliesTo(i, val ? [{ name: val.split('::')[0], value: val.split('::')[1] }] : []);
-                            }}
-                            title="Which variant does this image show?"
-                            className="w-full px-2 py-1 text-xs bg-white border border-stone-200 rounded outline-none focus:border-brand-600 mb-1.5"
-                          >
-                            <option value="">Shown for: all variants</option>
-                            {variantDims.map((d) =>
-                              d.values.map((v) => (
-                                <option key={`${d.name}::${v}`} value={`${d.name}::${v}`}>
-                                  {d.name}: {v}
-                                </option>
-                              )),
-                            )}
-                          </select>
+                          <div className="mb-1.5 space-y-1" title="Which variant(s) does this image show? Leave a dimension on 'any' to not constrain it.">
+                            {variantDims.map((d) => {
+                              const cur = img.appliesTo?.find((a) => a.name === d.name)?.value || '';
+                              return (
+                                <select
+                                  key={d.name}
+                                  value={cur}
+                                  onChange={(e) => {
+                                    const rest = (img.appliesTo || []).filter((a) => a.name !== d.name);
+                                    updateAppliesTo(i, e.target.value ? [...rest, { name: d.name, value: e.target.value }] : rest);
+                                  }}
+                                  className="w-full px-2 py-1 text-xs bg-white border border-stone-200 rounded outline-none focus:border-brand-600"
+                                >
+                                  <option value="">{d.name}: any</option>
+                                  {d.values.map((v) => (
+                                    <option key={v} value={v}>{d.name}: {v}</option>
+                                  ))}
+                                </select>
+                              );
+                            })}
+                          </div>
                         )}
                         <div className="flex items-center justify-between gap-1">
                           {img.isPrimary
