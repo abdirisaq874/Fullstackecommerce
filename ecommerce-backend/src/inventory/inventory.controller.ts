@@ -45,6 +45,22 @@ export class InventoryController {
     return { sku, available };
   }
 
+  // Public, unauthenticated per-variant stock for the storefront PDP. Unlike the
+  // seller-scoped `product/:productId` route above, this is read-only and exposes
+  // only variantSku/quantity/reserved so the PDP can show real per-combination
+  // availability (incl. 0). Untracked SKUs simply won't appear → the client falls
+  // back to the product-level stock for those.
+  @Get('public/product/:productId')
+  @ApiOperation({ summary: 'Public per-variant stock for a product (storefront PDP)' })
+  async publicStockLevels(@Param('productId', ParseObjectIdPipe) productId: string) {
+    const levels = await this.inventoryService.getStockLevels(productId);
+    return levels.map((l) => ({
+      variantSku: l.variantSku,
+      quantity: l.quantity,
+      reserved: l.reserved,
+    }));
+  }
+
   @Post('adjust')
   @Auth('admin')
   @ApiOperation({ summary: 'Manually adjust stock levels' })
