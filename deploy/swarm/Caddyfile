@@ -16,3 +16,14 @@ seller.gaarsiiglobal.com {
 api.gaarsiiglobal.com {
 	reverse_proxy backend:3000
 }
+
+# OpenSearch Dashboards (admin-only). OpenSearch security is disabled, so this
+# Caddy basic-auth is the ONLY gate — keep the password strong. User + bcrypt
+# hash come from the caddy service env (Secret Manager via deploy.sh).
+# Note: `basic_auth` is the Caddy 2.8+ directive name; on older Caddy use `basicauth`.
+search.gaarsiiglobal.com {
+	basic_auth {
+		{$SEARCH_ADMIN_USER:admin} {$SEARCH_ADMIN_HASH}
+	}
+	reverse_proxy opensearch-dashboards:5601
+}

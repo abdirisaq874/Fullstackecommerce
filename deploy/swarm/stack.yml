@@ -10,6 +10,13 @@ services:
     ports:
       - { target: 80,  published: 80,  mode: host }
       - { target: 443, published: 443, mode: host }
+    # Basic-auth credentials for search.gaarsiiglobal.com (OpenSearch Dashboards).
+    # Caddy reads these at runtime via {$SEARCH_ADMIN_USER}/{$SEARCH_ADMIN_HASH}.
+    # HASH is a bcrypt hash from Secret Manager (deploy.sh); ":?" aborts the
+    # deploy if it is missing so we never ship the dashboard with empty auth.
+    environment:
+      SEARCH_ADMIN_USER: ${SEARCH_ADMIN_USER:-admin}
+      SEARCH_ADMIN_HASH: ${SEARCH_ADMIN_HASH:?set the SEARCH_ADMIN_HASH secret (bcrypt) before deploying}
     configs:
       - source: caddyfile
         target: /etc/caddy/Caddyfile
@@ -161,6 +168,20 @@ services:
       nofile: { soft: 65536, hard: 65536 }
     volumes:
       - opensearch_data:/usr/share/opensearch/data
+    networks: [suuq]
+    deploy:
+      replicas: 1
+      restart_policy: { condition: any }
+
+  # OpenSearch Dashboards — index inspection & relevance tuning UI. Reachable
+  # ONLY over the overlay network; Caddy fronts it at search.gaarsiiglobal.com
+  # with basic-auth (the OpenSearch security plugin itself is disabled). No host
+  # port is published, so it is never exposed except through Caddy.
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.13.0
+    environment:
+      - 'OPENSEARCH_HOSTS=["http://opensearch:9200"]'
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
     networks: [suuq]
     deploy:
       replicas: 1

@@ -24,6 +24,12 @@ export RESEND_WEBHOOK_SECRET="$(sec RESEND_WEBHOOK_SECRET 2>/dev/null || echo ''
 # Meta Conversions API token — optional; empty ⇒ server-side CAPI no-ops (the
 # browser pixel still fires). Add the secret then redeploy to activate CAPI.
 export META_CAPI_ACCESS_TOKEN="$(sec META_CAPI_ACCESS_TOKEN 2>/dev/null || echo '')"
+# OpenSearch Dashboards basic-auth (Caddy fronts search.gaarsiiglobal.com).
+# HASH is REQUIRED: this `sec` call aborts the deploy (set -e) if the secret is
+# absent, so we never ship the dashboard without a password. Generate the hash
+# with:  docker run --rm caddy:2-alpine caddy hash-password --plaintext 'PASS'
+export SEARCH_ADMIN_USER="$(sec SEARCH_ADMIN_USER 2>/dev/null || echo 'admin')"
+export SEARCH_ADMIN_HASH="$(sec SEARCH_ADMIN_HASH)"
 
 # Refresh Artifact Registry auth (token via the VM's metadata SA) and deploy.
 gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
