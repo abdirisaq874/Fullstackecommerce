@@ -28,7 +28,11 @@ const SYSTEM =
   '"gender":"men|women|unisex|kids|null",' +
   '"attributes":[{"key":"canonical_snake_case_english","value":"normalized english value"}]}\n' +
   'Rules:\n' +
-  '- Translate Turkish->English. KEEP brand names, model numbers and SKUs EXACTLY (never translate identifiers).\n' +
+  '- Translate Turkish->English by MEANING. KEEP brand names, model numbers and SKUs EXACTLY (never translate identifiers).\n' +
+  '- NEVER transliterate or romanize Turkish letters (ü ş ı ğ ö ç). Do NOT produce phonetic ASCII like ' +
+  '"Yueruues" or "Guenluek". Translate the whole word: Yürüyüş->Walking/Hiking, Günlük->Casual/Daily, ' +
+  'Ayakkabı->Shoe, Erkek->Men, Kadın->Women, Terlik->Slipper, Bot->Boot, Çanta->Bag, Kışlık->Winter. ' +
+  'If a real word truly cannot be translated, keep its ORIGINAL Turkish spelling WITH diacritics — never an ASCII approximation.\n' +
   '- Normalize attribute KEYS to canonical English snake_case (Renk->color, Materyal->material, ' +
   'Desen->pattern, Topuk Tipi->heel_type, Menşei->origin_country, Beden->size, Cinsiyet->gender, ' +
   'Bağlama Şekli->closure_type, Kumaş Tipi->fabric_type).\n' +
@@ -86,6 +90,42 @@ export class ProductNormalizationService {
       this.logger.warn(`normalize failed: ${(err as Error).message}`);
       return null;
     }
+  }
+
+  /**
+   * Apply a NormalizedProduct onto a product-like target (a create DTO or a Mongoose
+   * doc), English-canonicalizing it while preserving the original in localizations.
+   * Mirrors the write-back used by the normalize-catalog backfill, and additionally
+   * clears any stale Somali localization so indexing re-translates it from the new
+   * English (fillLocaleGaps only fills MISSING locale fields).
+   */
+  applyNormalization(target: any, n: NormalizedProduct): void {
+    const origName = target.name;
+    const origShort = target.shortDescription;
+    const origDesc = target.description;
+    const origAttrs = target.attributes;
+    const src = n.sourceLang && n.sourceLang !== 'en' ? n.sourceLang : 'tr';
+    target.localizations = target.localizations || {};
+    if (!target.localizations[src]?.name) {
+      target.localizations[src] = { name: origName, shortDescription: origShort, description: origDesc };
+    }
+    target.localizations.en = {
+      name: n.name,
+      shortDescription: n.shortDescription ?? origShort,
+      description: n.description ?? origDesc,
+    };
+    target.localizationMeta = target.localizationMeta || {};
+    target.localizationMeta.en = { source: 'machine', translatedAt: new Date(), model: this.model };
+    // Force Somali to re-translate from the new English (don't leave stale Turkish copy).
+    if (target.localizations.so) delete target.localizations.so;
+    if (target.localizationMeta.so) delete target.localizationMeta.so;
+    if ((!target.rawAttributes || !target.rawAttributes.length) && origAttrs?.length) {
+      target.rawAttributes = origAttrs;
+    }
+    if (n.attributes?.length) target.attributes = n.attributes;
+    target.name = n.name; // canonical English becomes the primary name
+    target.normalizedAt = new Date();
+    target.embeddingInput = undefined; // force re-embed from English on index
   }
 
   private clean(p: any): NormalizedProduct | null {

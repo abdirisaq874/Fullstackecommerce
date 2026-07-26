@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ProductController, CategoryController, BrandController } from './product.controller';
 import { ProductService } from './product.service';
 import { ProductAiService } from './product-ai.service';
+import { ProductNormalizationService } from './product-normalization.service';
 import { ProductEventsListener } from './listeners/product-events.listener';
 import { ProductImportController } from './import/product-import.controller';
 import { ProductImportService } from './import/product-import.service';
@@ -34,6 +35,7 @@ import { StoresModule } from '../stores/stores.module';
   providers: [
     ProductService,
     ProductAiService,
+    ProductNormalizationService,
     ProductEventsListener,
     ProductImportService,
     ProductImportProcessor,

@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, FilterQuery } from 'mongoose';
 import { Product, ProductDocument, Category, Brand } from './schemas/product.schema';
 import { EventBusService } from '../shared/events/event-bus.service';
+import { ProductNormalizationService } from './product-normalization.service';
 import { PaginatedResponseDto } from '../shared/database/pagination.dto';
 import { generateSlug, generateUniqueSlug } from '../shared/utils/helpers';
 import {
@@ -17,6 +18,7 @@ export class ProductService {
     @InjectModel(Category.name) private categoryModel: Model<Category>,
     @InjectModel(Brand.name) private brandModel: Model<Brand>,
     private eventBus: EventBusService,
+    private normalization: ProductNormalizationService,
   ) {}
 
   // ═══════════════════════════════════════════
@@ -28,6 +30,7 @@ export class ProductService {
     sellerId: string,
     extra?: Record<string, any>,
   ): Promise<ProductDocument> {
+    await this.maybeNormalize(dto as any);
     const slug = await this.generateProductSlug(dto.name);
 
     const product = await this.productModel.create({
@@ -66,6 +69,33 @@ export class ProductService {
   }
 
   /**
+   * English-canonicalize a create payload in place (name, attributes, localizations,
+   * and thus the slug) via one LLM call, so every new product is stored English —
+   * the same write-back the normalize-catalog backfill uses. Products already English
+   * (sourceLang=en) keep the seller's exact input. Never blocks creation: on failure
+   * or when disabled the product is stored as-is and left for the backfill to retry.
+   */
+  private async maybeNormalize(dto: any): Promise<void> {
+    if (!this.normalization.enabled || !dto?.name?.trim()) return;
+    try {
+      const n = await this.normalization.normalize({
+        name: dto.name,
+        shortDescription: dto.shortDescription,
+        description: dto.description,
+        attributes: dto.attributes,
+      });
+      if (!n) return; // failed → leave unmarked; backfill retries later
+      if (n.sourceLang && n.sourceLang !== 'en') {
+        this.normalization.applyNormalization(dto, n);
+      } else {
+        dto.normalizedAt = new Date(); // already English — mark processed, keep input
+      }
+    } catch {
+      /* never block product creation on the LLM */
+    }
+  }
+
+  /**
    * Create many products in one request (CSV bulk import). Runs server-side in a
    * single HTTP call so it isn't subject to the per-request rate limit, and
    * isolates failures per row (a bad row doesn't abort the rest).
@@ -78,14 +108,23 @@ export class ProductService {
     let failed = 0;
     for (const dto of products) {
       try {
+        await this.maybeNormalize(dto as any);
         const slug = await this.generateProductSlug(dto.name);
-        await this.productModel.create({
+        const product = await this.productModel.create({
           ...dto,
           slug,
           sellerId: new Types.ObjectId(sellerId),
           categoryId: dto.categoryId ? new Types.ObjectId(dto.categoryId) : undefined,
           brandId: dto.brandId ? new Types.ObjectId(dto.brandId) : undefined,
         });
+        // Bulk path previously skipped BOTH indexing and per-SKU stock: wire the
+        // same product.created event (→ index) + variant-stock sync as create().
+        await this.eventBus.emit('product.created', {
+          productId: product._id.toString(),
+          name: product.name,
+          sellerId,
+        });
+        await this.syncVariantStock(product._id.toString(), (dto as any).variants);
         created++;
       } catch {
         failed++;
