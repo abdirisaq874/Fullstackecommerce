@@ -1,4 +1,5 @@
 import { ProductLocale } from '../../products/schemas/product.schema';
+import { extractColors } from './color-extractor';
 
 type AnyDoc = Record<string, any>;
 
@@ -70,6 +71,25 @@ export function buildProductDoc(
     doc[`name_${locale}`] = localizedField(product, locale, 'name', baseLocale);
     doc[`shortDescription_${locale}`] = localizedField(product, locale, 'shortDescription', baseLocale);
     doc[`description_${locale}`] = localizedField(product, locale, 'description', baseLocale);
+  }
+
+  // Derive `color` attributes from the (multilingual) name + short description so
+  // colour becomes a facet + filter even when the seller didn't tag it. Skips any
+  // colour already present in the product's own attributes.
+  const existingColors = new Set(
+    doc.attributes
+      .filter((a: AnyDoc) => ['color', 'colour', 'renk'].includes(String(a.key).toLowerCase()))
+      .map((a: AnyDoc) => String(a.value).toLowerCase()),
+  );
+  const colorText = [
+    ...locales.map((l) => doc[`name_${l}`]),
+    ...locales.map((l) => doc[`shortDescription_${l}`]),
+  ];
+  for (const c of extractColors(colorText)) {
+    if (!existingColors.has(c)) {
+      doc.attributes.push({ key: 'color', value: c, valueNum: undefined });
+      existingColors.add(c);
+    }
   }
 
   if (Array.isArray(product.embedding) && product.embedding.length > 0) {

@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { postJson } from './http.util';
 
+// QU runs on the request path BEFORE retrieval, so it must fail fast — a slow
+// LLM response can't be allowed to hang a live search. On timeout `understand`
+// returns null and the pipeline falls back to the raw query.
+const QU_TIMEOUT_MS = parseInt(process.env.SEARCH_QU_TIMEOUT_MS || '3000', 10);
+
 export interface UnderstoodQuery {
   /** Cleaned, spell-corrected query in the user's language. */
   cleaned: string;
@@ -70,6 +75,7 @@ export class QueryUnderstandingService {
           response_format: { type: 'json_object' },
         },
         { Authorization: `Bearer ${apiKey}` },
+        QU_TIMEOUT_MS,
       );
       const content = res?.choices?.[0]?.message?.content;
       if (!content) return null;

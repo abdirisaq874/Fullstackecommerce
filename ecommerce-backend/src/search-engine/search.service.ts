@@ -240,17 +240,19 @@ export class CatalogSearchService {
   }
 
   private mergeFilters(req: ResolvedFilters, understood?: UnderstoodQuery['filters']): ResolvedFilters {
-    // Explicit request filters win over LLM-inferred ones.
+    // Explicit request filters win over LLM-inferred ones. Price/category/brand
+    // are safe to infer (structured, always-present fields). Attributes (e.g.
+    // colour) are NOT applied as hard filters from QU — attribute coverage is
+    // imperfect, so a hard filter could zero-out results. Only EXPLICIT attribute
+    // filters (user clicked a facet) are enforced; the colour word still boosts
+    // via the text query.
     return {
       categorySlug: req.categorySlug ?? understood?.categorySlug,
       brandSlug: req.brandSlug ?? understood?.brandSlug,
       priceMin: req.priceMin ?? understood?.priceMin,
       priceMax: req.priceMax ?? understood?.priceMax,
       rating: req.rating,
-      attributes:
-        req.attributes && req.attributes.length
-          ? req.attributes
-          : understood?.attributes,
+      attributes: req.attributes,
     };
   }
 }
