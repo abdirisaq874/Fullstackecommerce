@@ -224,6 +224,8 @@ export function buildProductDto(form: any): any {
       if (v.weightGrams)     o.weightGrams   = Number(v.weightGrams);
       if (v.barcode)         o.barcode       = v.barcode;
       if (v.options?.length) o.options       = v.options;
+      // Per-variant stock → persisted to per-SKU Inventory by the backend.
+      o.stock = Number(v.stockOnHand) || 0;
       return o;
     });
   }
@@ -231,6 +233,8 @@ export function buildProductDto(form: any): any {
     dto.images = form.images.map((img: any, i: number) => {
       const o: any = { url: img.url };
       if (img.altText)   o.altText   = img.altText;
+      // Structured variant-image association (dimension-agnostic).
+      if (img.appliesTo?.length) o.appliesTo = img.appliesTo;
       if (img.isPrimary) o.isPrimary = true;
       o.sortOrder = i;
       return o;

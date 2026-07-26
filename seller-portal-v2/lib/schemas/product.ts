@@ -64,6 +64,10 @@ export const productVariantSchema = z.object({
 export const productImageSchema = z.object({
   url: z.string().min(1, 'Image URL required'),
   altText: z.string().optional(),
+  // Structured variant-image association (dimension-agnostic: color/material/…).
+  // Image shows for variants whose options include every {name,value} here;
+  // empty/absent = shared across all variants.
+  appliesTo: z.array(z.object({ name: z.string(), value: z.string() })).optional(),
   isPrimary: z.boolean().optional(),
   sortOrder: z.number().optional(),
 });

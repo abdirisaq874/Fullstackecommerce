@@ -892,6 +892,11 @@ function ImagesSection({
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
+  // Live variant dimensions → per-image "Applies to" options (color/material/…).
+  const variantDims = (
+    (useWatch({ control, name: 'dimensions' }) as { name: string; values: string[] }[] | undefined) || []
+  ).filter((d) => d?.name?.trim() && d.values?.length);
+
   // ALLOWED_UPLOAD_CONTENT_TYPES is a tuple of literal strings; produce a comma-
   // separated `accept` attribute and a readable label for error messages.
   const acceptAttr = ALLOWED_UPLOAD_CONTENT_TYPES.join(',');
@@ -923,6 +928,11 @@ function ImagesSection({
 
         const updateAlt = (i: number, altText: string) =>
           field.onChange(images.map((img, idx) => (idx === i ? { ...img, altText } : img)));
+
+        // Which variant(s) an image represents (color/material/…). Single-dimension
+        // selection covers the common case; empty = shared across all variants.
+        const updateAppliesTo = (i: number, appliesTo: { name: string; value: string }[]) =>
+          field.onChange(images.map((img, idx) => (idx === i ? { ...img, appliesTo } : img)));
 
         const reorder = (from: number, to: number) => {
           if (from === to || from < 0 || to < 0 || from >= images.length || to >= images.length) return;
@@ -1089,6 +1099,26 @@ function ImagesSection({
                           onChange={(e) => updateAlt(i, e.target.value)}
                           className="w-full px-2 py-1 text-xs bg-white border border-stone-200 rounded outline-none focus:border-brand-600 mb-1.5"
                         />
+                        {variantDims.length > 0 && (
+                          <select
+                            value={img.appliesTo?.[0] ? `${img.appliesTo[0].name}::${img.appliesTo[0].value}` : ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateAppliesTo(i, val ? [{ name: val.split('::')[0], value: val.split('::')[1] }] : []);
+                            }}
+                            title="Which variant does this image show?"
+                            className="w-full px-2 py-1 text-xs bg-white border border-stone-200 rounded outline-none focus:border-brand-600 mb-1.5"
+                          >
+                            <option value="">Shown for: all variants</option>
+                            {variantDims.map((d) =>
+                              d.values.map((v) => (
+                                <option key={`${d.name}::${v}`} value={`${d.name}::${v}`}>
+                                  {d.name}: {v}
+                                </option>
+                              )),
+                            )}
+                          </select>
+                        )}
                         <div className="flex items-center justify-between gap-1">
                           {img.isPrimary
                             ? <Badge variant="success">Primary</Badge>
