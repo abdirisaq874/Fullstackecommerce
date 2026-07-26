@@ -278,19 +278,21 @@ export class ProductService {
   /**
    * Maintenance: strip trailing commas/whitespace from stored product image
    * URLs. Some bulk-imported images were saved as ".../image.jpg," (trailing
-   * comma) and 404 — breaking colour swatches and thumbnails.
-   *
-   * Runs catalog-wide (not store-scoped): the affected products are spread
-   * across several stores, and this only ever repairs a malformed URL — it can
-   * never alter a well-formed one — so a global sweep is safe and idempotent.
+   * comma) and 404 — breaking colour swatches and thumbnails. Store-scoped:
+   * non-admins only clean the active store's products; admins clean all.
+   * Idempotent — safe to run repeatedly.
    */
-  async cleanImageUrls(): Promise<{ scanned: number; changed: number; cleaned: number }> {
+  async cleanImageUrls(
+    storeId: string,
+    role?: string,
+  ): Promise<{ scanned: number; changed: number; cleaned: number }> {
     const clean = (u: unknown): string =>
       String(u ?? '').trim().replace(/[;,]+$/, '').trim();
 
-    // Only pull products that actually have a malformed (trailing comma/space)
-    // image URL — keeps the sweep fast regardless of catalog size.
-    const filter: FilterQuery<Product> = { 'images.url': { $regex: /[;,]\s*$/ } };
+    const filter: FilterQuery<Product> = {
+      'images.0': { $exists: true },
+      ...(role === 'admin' ? {} : { sellerId: new Types.ObjectId(storeId) }),
+    };
 
     let scanned = 0;
     let changed = 0;

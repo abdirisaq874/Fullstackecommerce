@@ -110,9 +110,12 @@ export class ProductController {
 
   @Post('maintenance/clean-image-urls')
   @StoreScoped(StoreRole.STAFF)
-  @ApiOperation({ summary: 'Fix image URLs saved with a trailing comma (broken swatches/thumbnails, catalog-wide)' })
-  async cleanImageUrls() {
-    return this.productService.cleanImageUrls();
+  @ApiOperation({ summary: 'Fix image URLs saved with a trailing comma (broken swatches/thumbnails)' })
+  async cleanImageUrls(
+    @ActiveStore('storeId') storeId: string,
+    @CurrentUser('role') role: string,
+  ) {
+    return this.productService.cleanImageUrls(storeId, role);
   }
 
   @Patch(':id')
