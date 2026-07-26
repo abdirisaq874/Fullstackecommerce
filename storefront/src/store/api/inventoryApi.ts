@@ -20,7 +20,7 @@ export const inventoryApi = apiSlice.injectEndpoints({
     // Per-SKU stock levels for a whole product → lets the PDP show real
     // per-variant availability (incl. 0) and distinguish untracked SKUs.
     getStockLevels: builder.query<StockLevel[], string>({
-      query: (productId) => `/inventory/product/${productId}`,
+      query: (productId) => `/inventory/public/product/${productId}`,
     }),
   }),
 });
