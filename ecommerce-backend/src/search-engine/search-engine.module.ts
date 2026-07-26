@@ -25,6 +25,7 @@ import { IndexingListener } from './indexing/indexing.listener';
 
 import { RetrievalService } from './retrieval/retrieval.service';
 import { FacetsService } from './retrieval/facets.service';
+import { SearchLogService } from './analytics/search-log.service';
 import { CatalogSearchService } from './search.service';
 import { CatalogSearchController } from './catalog-search.controller';
 
@@ -58,6 +59,7 @@ import { CatalogSearchController } from './catalog-search.controller';
     // retrieval + orchestration
     RetrievalService,
     FacetsService,
+    SearchLogService,
     CatalogSearchService,
   ],
   exports: [IndexingService, IndexAdminService, RetrievalService, EmbeddingsService],

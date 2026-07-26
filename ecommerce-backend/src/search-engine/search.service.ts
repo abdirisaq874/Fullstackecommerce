@@ -11,6 +11,7 @@ import { reciprocalRankFusion } from './retrieval/fusion';
 import { QueryUnderstandingService, UnderstoodQuery } from './providers/query-understanding.service';
 import { EmbeddingsService } from './providers/embeddings.service';
 import { RerankService } from './providers/rerank.service';
+import { SearchLogService } from './analytics/search-log.service';
 import { CatalogSearchResult } from './dto/catalog-search.dto';
 
 const CANDIDATE_SIZE = 100; // candidates pulled per retriever before fuse/rerank
@@ -54,6 +55,7 @@ export class CatalogSearchService {
     private readonly qu: QueryUnderstandingService,
     private readonly embeddings: EmbeddingsService,
     private readonly rerank: RerankService,
+    private readonly searchLog: SearchLogService,
   ) {
     this.locales = this.config.get<string[]>('search.locales') || ['en', 'so'];
     this.defaultLocale = this.config.get<string>('search.defaultLocale') || 'en';
@@ -61,6 +63,7 @@ export class CatalogSearchService {
   }
 
   async search(params: CatalogSearchParams): Promise<CatalogSearchResponse> {
+    const started = Date.now();
     const locale = this.locales.includes(params.locale) ? params.locale : this.defaultLocale;
     const { q, page, limit } = params;
 
@@ -111,12 +114,37 @@ export class CatalogSearchService {
       .filter(Boolean)
       .map((h) => this.toResult(h!.source, locale));
 
-    return {
+    const response: CatalogSearchResponse = {
       data,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) || 0 },
       facets,
       query: { raw: q, understood, appliedFilters: filters },
     };
+
+    // Fire-and-forget analytics (never awaited, never throws into the request).
+    this.searchLog.log({
+      q: q || '',
+      locale,
+      resultCount: total,
+      returned: data.length,
+      tookMs: Date.now() - started,
+      vectorUsed: vectorHits.length > 0,
+      page,
+      sort: params.sort,
+      category: filters.categorySlug,
+      brand: filters.brandSlug,
+      hasFilters: !!(
+        filters.categorySlug ||
+        filters.brandSlug ||
+        filters.priceMin != null ||
+        filters.priceMax != null ||
+        filters.rating != null ||
+        (filters.attributes && filters.attributes.length)
+      ),
+      topResultIds: pageIds.slice(0, 10),
+    });
+
+    return response;
   }
 
   private async retrieveVector(
