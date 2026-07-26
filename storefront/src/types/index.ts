@@ -62,6 +62,9 @@ export interface ProductImage {
   _id: string;
   url: string;
   altText?: string;
+  /** Variant-image association: image applies to variants whose options include
+   *  every {name,value} here. Empty/absent = shared image (all variants). */
+  appliesTo?: { name: string; value: string }[];
   isPrimary?: boolean;
   sortOrder?: number;
 }

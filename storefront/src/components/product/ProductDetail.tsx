@@ -14,7 +14,7 @@ import { ZoomImage } from './ZoomImage';
 import { Button, Price, Rating, Badge, QtyStepper, Container } from '@/components/ui';
 import { useProductBySlugQuery } from '@/store/api/productsApi';
 import { useAddToCartMutation } from '@/store/api/cartApi';
-import { useCheckStockQuery } from '@/store/api/inventoryApi';
+import { useGetStockLevelsQuery } from '@/store/api/inventoryApi';
 import { useCreateThreadMutation } from '@/store/api/messagesApi';
 import { useSellerQuery } from '@/store/api/sellersApi';
 import { useAppDispatch, useAppSelector } from '@/store';
@@ -99,7 +99,7 @@ export function ProductDetail({ slug }: { slug: string }) {
   }, [product]);
 
   // Reset the gallery to the first image whenever the selected colour changes.
-  useEffect(() => { setActiveImg(0); }, [selected.Color]);
+  useEffect(() => { setActiveImg(0); }, [JSON.stringify(selected)]);
 
   // Record the view for "Recently viewed" + personalized "For you".
   useEffect(() => {
@@ -127,12 +127,21 @@ export function ProductDetail({ slug }: { slug: string }) {
   }, [product]);
 
   const hasVariants = (product?.variants?.length ?? 0) > 0;
-  const { data: stock } = useCheckStockQuery(selectedVariant?.sku ?? '', { skip: !selectedVariant?.sku });
-  // Variant products use SKU-level inventory but fall back to product.stock when
-  // the SKU isn't inventory-tracked (imported/seeded variants) — mirrors the
-  // backend cart. Simple products use product.stock directly.
+  const { data: stockLevels } = useGetStockLevelsQuery(product?._id ?? '', {
+    skip: !product?._id || !hasVariants,
+  });
+  const stockMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const l of stockLevels ?? []) m[l.variantSku] = Math.max(0, (l.quantity ?? 0) - (l.reserved ?? 0));
+    return m;
+  }, [stockLevels]);
   const productStock = (product as any)?.stock ?? 0;
-  const available = hasVariants ? (stock?.available || productStock) : productStock;
+  // Per-variant: use the SKU's REAL inventory (incl. 0 → out of stock); fall back
+  // to product.stock only when the SKU has no inventory record (untracked).
+  const selSku = selectedVariant?.sku;
+  const available = hasVariants
+    ? (selSku && selSku in stockMap ? stockMap[selSku] : productStock)
+    : productStock;
   const outOfStock = available <= 0;
   const wished = useAppSelector((s) => (product ? s.wishlist.items.some((w) => w.productId === product._id) : false));
 
@@ -146,10 +155,24 @@ export function ProductDetail({ slug }: { slug: string }) {
     );
 
   const allImages = [...(product.images ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-  // When images are tagged with a colour (altText), show only the selected
-  // colour's images; otherwise fall back to the full gallery.
-  const colorImages = selected.Color ? allImages.filter((im) => im.altText === selected.Color) : [];
-  const images = colorImages.length ? colorImages : allImages;
+  // Dimension-agnostic variant images: an image shows when EVERY entry in its
+  // `appliesTo` matches the current selection (color / material / sleeve / combo).
+  // Back-compat: an image tagged only via altText=<optionValue> is treated as an
+  // appliesTo for whichever dimension owns that value. Images with neither are
+  // shared and always show. Result = shared images + the ones matching selection.
+  const dimForValue = (val: string) => optionGroups.find((g) => g.values.includes(val))?.name;
+  const imageApplies = (im: (typeof allImages)[number]) => {
+    const rules =
+      im.appliesTo && im.appliesTo.length
+        ? im.appliesTo
+        : im.altText && dimForValue(im.altText)
+          ? [{ name: dimForValue(im.altText) as string, value: im.altText }]
+          : [];
+    if (!rules.length) return true; // shared / general image
+    return rules.every((r) => selected[r.name] === r.value);
+  };
+  const matched = allImages.filter(imageApplies);
+  const images = matched.length ? matched : allImages;
   const price = selectedVariant?.priceOverride ?? product.basePrice;
   const displayName = localizedText(product.localizations, locale, 'name', product.name);
   const displayShort = localizedText(product.localizations, locale, 'shortDescription', product.shortDescription);
@@ -333,7 +356,11 @@ export function ProductDetail({ slug }: { slug: string }) {
                     if (isColor) {
                       // Visual swatch: prefer the product photo tagged with this
                       // colour, then a solid hex chip, then an abbreviated label.
-                      const swatchImg = allImages.find((im) => im.altText === val)?.url;
+                      const swatchImg = allImages.find(
+                        (im) =>
+                          im.appliesTo?.some((a) => a.name === g.name && a.value === val) ||
+                          im.altText === val,
+                      )?.url;
                       const hex = colorToHex(val);
                       return (
                         <button
