@@ -173,6 +173,18 @@ export function ProductDetail({ slug }: { slug: string }) {
   };
   const matched = allImages.filter(imageApplies);
   const images = matched.length ? matched : allImages;
+  // Per-variant availability for the option selectors: a value is "sold out" when
+  // every variant carrying it (holding the other picked dimensions fixed) is at 0
+  // stock. Untracked SKUs fall back to product-level stock; indeterminate → shown.
+  const isValueAvailable = (groupName: string, val: string) => {
+    const matching = (product.variants ?? []).filter((v) => {
+      const opts = Object.fromEntries((v.options ?? []).map((o) => [o.name, o.value]));
+      if (opts[groupName] !== val) return false;
+      return Object.entries(selected).every(([k, sv]) => k === groupName || !sv || opts[k] === sv);
+    });
+    if (!matching.length) return true;
+    return matching.some((v) => (v.sku in stockMap ? stockMap[v.sku] : productStock) > 0);
+  };
   const price = selectedVariant?.priceOverride ?? product.basePrice;
   const displayName = localizedText(product.localizations, locale, 'name', product.name);
   const displayShort = localizedText(product.localizations, locale, 'shortDescription', product.shortDescription);
@@ -353,6 +365,7 @@ export function ProductDetail({ slug }: { slug: string }) {
                 <div className="flex flex-wrap gap-2">
                   {g.values.map((val) => {
                     const active = selected[g.name] === val;
+                    const soldOut = !isValueAvailable(g.name, val);
                     if (isColor) {
                       // Visual swatch: prefer the product photo tagged with this
                       // colour, then a solid hex chip, then an abbreviated label.
@@ -367,12 +380,13 @@ export function ProductDetail({ slug }: { slug: string }) {
                           key={val}
                           type="button"
                           onClick={() => setSelected((s) => ({ ...s, [g.name]: val }))}
-                          title={val}
-                          aria-label={val}
+                          title={soldOut ? `${val} — out of stock` : val}
+                          aria-label={soldOut ? `${val} (out of stock)` : val}
                           aria-pressed={active}
                           className={cn(
                             'relative h-12 w-12 overflow-hidden rounded-xl border-2 transition',
                             active ? 'border-brand ring-2 ring-brand/30' : 'border-line hover:border-brand',
+                            soldOut && 'opacity-40',
                           )}
                         >
                           {swatchImg ? (
@@ -390,6 +404,11 @@ export function ProductDetail({ slug }: { slug: string }) {
                               <Check className="h-3 w-3" />
                             </span>
                           )}
+                          {soldOut && (
+                            <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                              <span className="h-[2px] w-[140%] rotate-45 bg-ink/50" />
+                            </span>
+                          )}
                         </button>
                       );
                     }
@@ -398,7 +417,12 @@ export function ProductDetail({ slug }: { slug: string }) {
                         key={val}
                         type="button"
                         onClick={() => setSelected((s) => ({ ...s, [g.name]: val }))}
-                        className={cn('rounded-xl border-2 px-4 py-2 text-sm font-semibold transition', active ? 'border-brand bg-brand text-white' : 'border-line hover:border-brand')}
+                        title={soldOut ? `${val} — out of stock` : val}
+                        className={cn(
+                          'rounded-xl border-2 px-4 py-2 text-sm font-semibold transition',
+                          active ? 'border-brand bg-brand text-white' : 'border-line hover:border-brand',
+                          soldOut && 'text-muted-fg line-through opacity-50',
+                        )}
                       >
                         {val}
                       </button>
