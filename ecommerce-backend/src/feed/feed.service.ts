@@ -117,7 +117,7 @@ export class FeedService {
       lines.push(this.tag('g:additional_image_link', img.url));
     }
     lines.push(this.tag('g:availability', p.stock > 0 ? 'in stock' : 'out of stock'));
-    lines.push(this.tag('g:condition', 'new'));
+    lines.push(this.tag('g:condition', ['new', 'used', 'refurbished'].includes(p.condition) ? p.condition : 'new'));
     if (hasSale) {
       lines.push(this.tag('g:price', `${compareAt!.toFixed(2)} ${currency}`));
       lines.push(this.tag('g:sale_price', `${price.toFixed(2)} ${currency}`));
@@ -146,6 +146,10 @@ export class FeedService {
     if (color) lines.push(this.tag('g:color', this.truncate(color, 100)));
     const material = attr('material');
     if (material) lines.push(this.tag('g:material', this.truncate(material, 200)));
+    const dims = p.packageDimensionsCm;
+    if (dims?.length) lines.push(this.tag('g:shipping_length', `${dims.length} cm`));
+    if (dims?.width) lines.push(this.tag('g:shipping_width', `${dims.width} cm`));
+    if (dims?.height) lines.push(this.tag('g:shipping_height', `${dims.height} cm`));
     // GTIN from a variant barcode (only if it looks like a real UPC/EAN/GTIN).
     const gtin = (p.variants || []).find((v: any) => v?.barcode)?.barcode || attr('gtin');
     if (gtin && /^\d{8,14}$/.test(String(gtin).trim())) {

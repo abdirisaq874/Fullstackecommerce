@@ -143,6 +143,9 @@ export class Product {
   status: string;
 
   @Prop({ default: false }) isFeatured: boolean;
+  @Prop({ enum: ['new', 'used', 'refurbished'], default: 'new' }) condition: string;
+  @Prop({ type: { length: Number, width: Number, height: Number }, default: undefined })
+  packageDimensionsCm?: { length?: number; width?: number; height?: number };
   @Prop({ default: 0 }) avgRating: number;
   @Prop({ default: 0 }) reviewCount: number;
   @Prop({ default: 0 }) totalSold: number;

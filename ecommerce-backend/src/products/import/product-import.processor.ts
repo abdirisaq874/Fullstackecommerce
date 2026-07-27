@@ -130,6 +130,8 @@ export class ProductImportProcessor extends WorkerHost {
           ? variants.reduce((s: number, v: any) => s + (v.stock || 0), 0)
           : (product.stock ?? 0),
         status: product.status || 'draft',
+        ...(product.condition ? { condition: product.condition } : {}),
+        ...(product.dimensionsCm ? { packageDimensionsCm: product.dimensionsCm } : {}),
         images,
         attributes: product.attributes,
         ...(variants.length ? { variants } : {}),

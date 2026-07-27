@@ -33,6 +33,8 @@ export interface ParsedProduct {
   currency?: string;
   stock?: number;
   status?: string;
+  condition?: string;
+  dimensionsCm?: { length?: number; width?: number; height?: number };
   imageUrls: string[];
   sourceUrl?: string;
   attributes: { key: string; value: string }[];
@@ -68,6 +70,15 @@ function normRow(row: Record<string, unknown>): Record<string, string> {
     out[k.toLowerCase().trim()] = row[k] == null ? '' : String(row[k]).trim();
   }
   return out;
+}
+
+/** Package dimensions in cm from lengthCm/widthCm/heightCm columns (all optional). */
+function readDims(r: Record<string, string>): { length?: number; width?: number; height?: number } | undefined {
+  const length = toNum(r['lengthcm']);
+  const width = toNum(r['widthcm']);
+  const height = toNum(r['heightcm']);
+  if (length == null && width == null && height == null) return undefined;
+  return { length, width, height };
 }
 
 function readOptions(r: Record<string, string>): { name: string; value: string }[] {
@@ -138,6 +149,10 @@ export function parseImportFile(buffer: Buffer): ParseResult {
         status: STATUSES.includes((r['status'] || '').toLowerCase())
           ? (r['status'] || '').toLowerCase()
           : undefined,
+        condition: ['new', 'used', 'refurbished'].includes((r['condition'] || '').toLowerCase())
+          ? (r['condition'] || '').toLowerCase()
+          : undefined,
+        dimensionsCm: readDims(r),
         imageUrls: readUrls(r['imageurls']),
         sourceUrl: r['sourceurl'] || undefined,
         attributes: readAttributes(r['attributes']),

@@ -40,6 +40,8 @@ Headers are **case-insensitive** and trimmed. Encoding must be **UTF-8**.
 | `currency` | no | Default `USD`. |
 | `stock` | no | Used only for **no-variant** products. For variant products, per-variant `variantStock` is summed automatically. |
 | `status` | no | `draft` (default) \| `active` \| `archived`. |
+| `condition` | no | `new` (default) \| `used` \| `refurbished`. Not AI-inferable — set it if not new. |
+| `lengthCm` / `widthCm` / `heightCm` | no | Package size in cm — for accurate shipping rates + the ad feed. |
 | `imageUrls` | recommended | One or more URLs, separated by `|` or newlines. Shared across all variants. |
 | `sourceUrl` | no | Original product URL (kept as import metadata). |
 | `attributes` | no | Extra specs as `key:value` pairs joined by `|`, e.g. `heel_type:flat\|pattern:solid`. Keys are normalized to English. |
@@ -102,7 +104,7 @@ Notes on the example:
   category, tags/keywords, embeddings, and per-SKU inventory records — all derived
   automatically. Provide `attributes` only to add specs the AI can't infer.
 
-## Coming soon (planned optional columns)
+## Roadmap (not yet supported)
 
-`condition` (new/used/refurbished), package `dimensions` (L×W×H for shipping). Until
-then, all products are treated as **new**.
+Country of origin, warranty, handling/lead time, and size-chart columns are candidates
+for a future revision. `condition` and package dimensions (above) are **now supported**.

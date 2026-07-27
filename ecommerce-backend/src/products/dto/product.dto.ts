@@ -74,6 +74,12 @@ export class ProductLocalizationsDto {
   @IsOptional() @ValidateNested() @Type(() => LocalizedTextDto) am?: LocalizedTextDto;
 }
 
+export class DimensionsDto {
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) length?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) width?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) height?: number;
+}
+
 export class CreateProductDto {
   @ApiProperty() @IsString() @IsNotEmpty() name: string;
   @ApiPropertyOptional() @IsOptional() @IsString() categoryId?: string;
@@ -94,6 +100,14 @@ export class CreateProductDto {
   @IsOptional() @IsEnum(['draft', 'active', 'archived'])
   status?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isFeatured?: boolean;
+
+  @ApiPropertyOptional({ enum: ['new', 'used', 'refurbished'] })
+  @IsOptional() @IsEnum(['new', 'used', 'refurbished'])
+  condition?: string;
+
+  @ApiPropertyOptional({ type: DimensionsDto, description: 'Package size in cm (for shipping)' })
+  @IsOptional() @ValidateNested() @Type(() => DimensionsDto)
+  packageDimensionsCm?: DimensionsDto;
 
   @ApiPropertyOptional({ type: [CreateVariantDto] })
   @IsOptional() @IsArray() @ValidateNested({ each: true })
