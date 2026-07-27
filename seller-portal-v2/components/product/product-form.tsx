@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller, useWatch, type SubmitHandler, type FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Check, AlertCircle, Save, Eye, ArrowLeft, FileText, ImageIcon, Tag as TagIcon, Hash, Layers, Globe, Loader2, Upload, GripVertical, Sparkles } from 'lucide-react';
+import { Check, AlertCircle, Save, Eye, ArrowLeft, FileText, ImageIcon, Tag as TagIcon, Hash, Layers, Loader2, Upload, GripVertical, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { Button } from '@/components/primitives/button';
@@ -14,7 +14,7 @@ import { Alert } from '@/components/primitives/alert';
 import { Field, Input, Textarea, Select } from '@/components/primitives/field';
 import { VariantsEditor } from '@/components/product/variants-editor';
 import { ConfirmDialog } from '@/components/primitives/confirm-dialog';
-import { CURRENCIES, LOCALES } from '@/lib/config/reference-data';
+import { CURRENCIES } from '@/lib/config/reference-data';
 import { useGetCategoriesQuery, useGetBrandsQuery } from '@/lib/api/catalog-api';
 import { useAiDraftProductMutation } from '@/lib/api/products-api';
 import { inferDimensions, buildProductDto } from '@/lib/utils';
@@ -70,6 +70,9 @@ const blankDefaults: ProductFormValues = {
   keywords: [],
   status: 'draft',
   isFeatured: false,
+  gender: 'auto',
+  ageGroup: 'auto',
+  gtin: '',
   condition: 'new',
   packageDimensionsCm: { length: '', width: '', height: '' },
   basePrice: '',
@@ -104,6 +107,17 @@ function defaultsFromExisting(existing: Product): ProductFormValues {
     keywords: (existing as { keywords?: string[] }).keywords ?? [],
     status: existing.status,
     isFeatured: !!existing.isFeatured,
+    gender: (['men', 'women', 'unisex'].includes(
+      (existing.attributes || []).find((a) => a.key === 'gender')?.value as string,
+    )
+      ? ((existing.attributes || []).find((a) => a.key === 'gender')!.value as 'men' | 'women' | 'unisex')
+      : 'auto') as 'auto' | 'men' | 'women' | 'unisex',
+    ageGroup: (['adult', 'kids'].includes(
+      (existing.attributes || []).find((a) => a.key === 'age_group')?.value as string,
+    )
+      ? ((existing.attributes || []).find((a) => a.key === 'age_group')!.value as 'adult' | 'kids')
+      : 'auto') as 'auto' | 'adult' | 'kids',
+    gtin: (existing as any).gtin ?? '',
     condition: (['new', 'used', 'refurbished'].includes((existing as any).condition)
       ? (existing as any).condition
       : 'new') as 'new' | 'used' | 'refurbished',
@@ -675,40 +689,11 @@ function BasicsSection({
     <div>
       <SectionTitle title="Basics" hint="Core product information shown to buyers" />
 
-      {/* Locale tabs */}
-      <div className="mb-5">
-        <div className="flex items-center gap-1 mb-2 text-xs text-stone-500">
-          <Globe className="w-3.5 h-3.5" />
-          Language
-        </div>
-        <div className="flex flex-wrap gap-1 p-1 bg-stone-100 rounded-md">
-          {LOCALES.map((loc) => {
-            const status = localeStatus(loc.code);
-            const isActive = activeLocale === loc.code;
-            return (
-              <button
-                key={loc.code}
-                onClick={() => onLocaleChange(loc.code as ProductLocaleCode)}
-                className={clsx(
-                  'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                  isActive ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900',
-                )}
-                type="button"
-              >
-                <span>{loc.flag}</span>
-                <span>{loc.label}</span>
-                {status === 'complete' && <Check className="w-3 h-3 text-brand-600" />}
-                {status === 'partial'  && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
-              </button>
-            );
-          })}
-        </div>
-        {activeLocale !== 'en' && (
-          <div className="text-2xs text-stone-500 mt-2">
-            Editing the {LOCALES.find((l) => l.code === activeLocale)?.label} translation. Empty fields fall back to English.
-          </div>
-        )}
-      </div>
+      {/* Sellers enter English only — Somali is auto-translated at index time; other
+          locales were removed per product decision. `void`s keep the now-unused
+          locale plumbing from tripping lint without a larger refactor. */}
+      {void onLocaleChange}
+      {void localeStatus}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field
@@ -841,8 +826,25 @@ function BasicsSection({
           <p className="text-xs text-stone-500 mt-1 ml-6">Featured products appear in curated areas like the homepage.</p>
         </div>
       )}
-      {activeLocale === 'en' && (
-        <div className="mt-5 pt-5 border-t border-stone-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="mt-5 pt-5 border-t border-stone-200 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-stone-800 mb-1">Gender</label>
+            <Select {...register('gender')}>
+              <option value="auto">Auto-detect</option>
+              <option value="men">Men</option>
+              <option value="women">Women</option>
+              <option value="unisex">Unisex</option>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-stone-800 mb-1">Age group</label>
+            <Select {...register('ageGroup')}>
+              <option value="auto">Auto-detect</option>
+              <option value="adult">Adult</option>
+              <option value="kids">Kids</option>
+            </Select>
+          </div>
           <div>
             <label className="block text-sm font-medium text-stone-800 mb-1">Condition</label>
             <Select {...register('condition')}>
@@ -850,7 +852,21 @@ function BasicsSection({
               <option value="used">Used</option>
               <option value="refurbished">Refurbished</option>
             </Select>
-            <p className="text-xs text-stone-500 mt-1">Gender, colour &amp; material are detected automatically.</p>
+          </div>
+        </div>
+        <p className="text-xs text-stone-500">
+          Leave Gender/Age group on “Auto-detect” to let AI infer them (colour &amp; material are always auto);
+          set a value to override. Condition isn’t auto-detected.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-stone-800 mb-1">Barcode / GTIN (optional)</label>
+            <input
+              {...register('gtin')}
+              placeholder="UPC / EAN — the product's barcode number"
+              className="w-full px-3 py-2 text-sm border border-stone-300 rounded outline-none focus:border-brand-600"
+            />
+            <p className="text-xs text-stone-500 mt-1">The physical barcode (not your SKU). Improves ad matching. Per-variant barcodes go in the Variants tab.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-stone-800 mb-1">Package size — cm (optional)</label>
@@ -870,7 +886,7 @@ function BasicsSection({
             <p className="text-xs text-stone-500 mt-1">L × W × H — used for accurate shipping rates.</p>
           </div>
         </div>
-      )}
+      </div>
       {/* Silence unused-deps lint — control reserved for future Controllers. */}
       {void control}
     </div>
@@ -1303,11 +1319,6 @@ function ReviewSection({
   onSubmit: (status: 'draft' | 'active') => void;
   saving?: boolean;
 }) {
-  const localizations = values.localizations ?? { en: {} };
-  const languagesFilled = Object.keys(localizations).filter(
-    (k) => localizations[k as keyof LocalizedFields]?.name,
-  ).length;
-
   return (
     <div>
       <SectionTitle title="Review & publish" hint="Final check before saving" />
@@ -1320,7 +1331,7 @@ function ReviewSection({
           value={values.hasVariants ? `${values.variants.length} variant${values.variants.length === 1 ? '' : 's'}` : 'Single SKU'}
         />
         <Summary label="Images"    value={`${values.images.length} image${values.images.length === 1 ? '' : 's'}`} />
-        <Summary label="Languages" value={`${languagesFilled} of ${LOCALES.length}`} />
+        <Summary label="Condition" value={values.condition || 'new'} />
       </div>
 
       <details className="border border-stone-200 rounded-lg mb-5">

@@ -108,6 +108,10 @@ export const productFormSchema = z
     keywords: z.array(z.string()).default([]),
     status: productStatusSchema.default('draft'),
     isFeatured: z.boolean().default(false),
+    // Seller-supplied (override AI). 'auto' = let AI infer from the product.
+    gender: z.enum(['auto', 'men', 'women', 'unisex']).default('auto'),
+    ageGroup: z.enum(['auto', 'adult', 'kids']).default('auto'),
+    gtin: z.string().trim().optional().default(''),
     // Seller-supplied (not AI-inferable): item condition + package size for shipping.
     condition: z.enum(['new', 'used', 'refurbished']).default('new'),
     packageDimensionsCm: z

@@ -209,6 +209,7 @@ export function buildProductDto(form: any): any {
   if (form.status)           dto.status           = form.status;
   if (form.isFeatured)       dto.isFeatured       = true;
   if (form.condition && form.condition !== 'new') dto.condition = form.condition;
+  if (form.gtin?.trim()) dto.gtin = form.gtin.trim();
   // Package dimensions (cm) for shipping — only send the values the seller filled.
   const d = form.packageDimensionsCm || {};
   const dims: Record<string, number> = {};
@@ -249,7 +250,16 @@ export function buildProductDto(form: any): any {
       return o;
     });
   }
-  if (form.attributes?.length) dto.attributes = form.attributes.filter((a: any) => a.key && a.value);
+  // Attributes + seller gender/age_group overrides ('auto' = let AI infer → omit).
+  const attrs: { key: string; value: string }[] = (form.attributes || []).filter((a: any) => a.key && a.value);
+  const setAttr = (key: string, value: string) => {
+    const i = attrs.findIndex((a) => a.key === key);
+    if (i >= 0) attrs[i] = { key, value };
+    else attrs.push({ key, value });
+  };
+  if (form.gender && form.gender !== 'auto') setAttr('gender', form.gender);
+  if (form.ageGroup && form.ageGroup !== 'auto') setAttr('age_group', form.ageGroup);
+  if (attrs.length) dto.attributes = attrs;
   if (form.metaTitle)          dto.metaTitle       = form.metaTitle;
   if (form.metaDescription)    dto.metaDescription = form.metaDescription;
   // The backend's CreateProductDto now accepts a `localizations` object
