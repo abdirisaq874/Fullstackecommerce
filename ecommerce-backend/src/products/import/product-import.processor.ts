@@ -132,6 +132,7 @@ export class ProductImportProcessor extends WorkerHost {
         status: product.status || 'draft',
         ...(product.condition ? { condition: product.condition } : {}),
         ...(product.dimensionsCm ? { packageDimensionsCm: product.dimensionsCm } : {}),
+        ...(product.gtin ? { gtin: product.gtin } : {}),
         images,
         attributes: product.attributes,
         ...(variants.length ? { variants } : {}),

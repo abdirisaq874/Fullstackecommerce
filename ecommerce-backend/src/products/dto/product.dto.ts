@@ -105,6 +105,9 @@ export class CreateProductDto {
   @IsOptional() @IsEnum(['new', 'used', 'refurbished'])
   condition?: string;
 
+  @ApiPropertyOptional({ description: 'Product barcode (UPC/EAN/GTIN)' })
+  @IsOptional() @IsString() gtin?: string;
+
   @ApiPropertyOptional({ type: DimensionsDto, description: 'Package size in cm (for shipping)' })
   @IsOptional() @ValidateNested() @Type(() => DimensionsDto)
   packageDimensionsCm?: DimensionsDto;

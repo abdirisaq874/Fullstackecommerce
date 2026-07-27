@@ -144,6 +144,8 @@ export class Product {
 
   @Prop({ default: false }) isFeatured: boolean;
   @Prop({ enum: ['new', 'used', 'refurbished'], default: 'new' }) condition: string;
+  @Prop() gtin?: string; // product-level barcode (UPC/EAN/GTIN) for single-SKU products
+
   @Prop({ type: { length: Number, width: Number, height: Number }, default: undefined })
   packageDimensionsCm?: { length?: number; width?: number; height?: number };
   @Prop({ default: 0 }) avgRating: number;

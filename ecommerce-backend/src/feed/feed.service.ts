@@ -151,7 +151,7 @@ export class FeedService {
     if (dims?.width) lines.push(this.tag('g:shipping_width', `${dims.width} cm`));
     if (dims?.height) lines.push(this.tag('g:shipping_height', `${dims.height} cm`));
     // GTIN from a variant barcode (only if it looks like a real UPC/EAN/GTIN).
-    const gtin = (p.variants || []).find((v: any) => v?.barcode)?.barcode || attr('gtin');
+    const gtin = (p.variants || []).find((v: any) => v?.barcode)?.barcode || p.gtin || attr('gtin');
     if (gtin && /^\d{8,14}$/.test(String(gtin).trim())) {
       lines.push(this.tag('g:gtin', String(gtin).trim()));
     }

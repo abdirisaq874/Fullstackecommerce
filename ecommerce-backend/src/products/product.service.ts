@@ -77,6 +77,10 @@ export class ProductService {
    */
   private async maybeNormalize(dto: any): Promise<void> {
     if (!this.normalization.enabled || !dto?.name?.trim()) return;
+    // Seller-supplied gender/age_group must WIN over AI inference.
+    const sellerOverrides = (dto.attributes || []).filter(
+      (a: any) => a?.key === 'gender' || a?.key === 'age_group',
+    );
     try {
       const n = await this.normalization.normalize({
         name: dto.name,
@@ -93,6 +97,13 @@ export class ProductService {
         const enriched = this.normalization.enrichAttributes(dto, n);
         dto.normalizedAt = new Date();
         if (enriched) dto.embeddingInput = undefined;
+      }
+      // Re-apply seller gender/age_group over whatever the AI produced.
+      if (sellerOverrides.length) {
+        const rest = (dto.attributes || []).filter(
+          (a: any) => a?.key !== 'gender' && a?.key !== 'age_group',
+        );
+        dto.attributes = [...rest, ...sellerOverrides];
       }
     } catch {
       /* never block product creation on the LLM */

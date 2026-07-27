@@ -35,6 +35,7 @@ export interface ParsedProduct {
   status?: string;
   condition?: string;
   dimensionsCm?: { length?: number; width?: number; height?: number };
+  gtin?: string;
   imageUrls: string[];
   sourceUrl?: string;
   attributes: { key: string; value: string }[];
@@ -69,6 +70,22 @@ function normRow(row: Record<string, unknown>): Record<string, string> {
   for (const k of Object.keys(row)) {
     out[k.toLowerCase().trim()] = row[k] == null ? '' : String(row[k]).trim();
   }
+  return out;
+}
+
+/** Read the `attributes` column plus the dedicated gender/ageGroup columns. Seller-
+ *  provided gender/age_group WIN over AI enrichment (same as single-create). */
+function readAttributesFull(r: Record<string, string>): { key: string; value: string }[] {
+  const out = readAttributes(r['attributes']);
+  const setAttr = (key: string, value: string) => {
+    const i = out.findIndex((a) => a.key === key);
+    if (i >= 0) out[i] = { key, value };
+    else out.push({ key, value });
+  };
+  const g = (r['gender'] || '').toLowerCase();
+  if (['men', 'women', 'unisex'].includes(g)) setAttr('gender', g);
+  const ag = (r['agegroup'] || r['age_group'] || '').toLowerCase();
+  if (['adult', 'kids'].includes(ag)) setAttr('age_group', ag);
   return out;
 }
 
@@ -153,9 +170,10 @@ export function parseImportFile(buffer: Buffer): ParseResult {
           ? (r['condition'] || '').toLowerCase()
           : undefined,
         dimensionsCm: readDims(r),
+        gtin: r['gtin'] || undefined,
         imageUrls: readUrls(r['imageurls']),
         sourceUrl: r['sourceurl'] || undefined,
-        attributes: readAttributes(r['attributes']),
+        attributes: readAttributesFull(r),
         variants: [],
       };
       byHandle.set(handleKey, p);

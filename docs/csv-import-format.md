@@ -41,6 +41,9 @@ Headers are **case-insensitive** and trimmed. Encoding must be **UTF-8**.
 | `stock` | no | Used only for **no-variant** products. For variant products, per-variant `variantStock` is summed automatically. |
 | `status` | no | `draft` (default) \| `active` \| `archived`. |
 | `condition` | no | `new` (default) \| `used` \| `refurbished`. Not AI-inferable — set it if not new. |
+| `gender` | no | `men` \| `women` \| `unisex`. **Overrides** AI detection. Leave blank to auto-detect. |
+| `ageGroup` | no | `adult` \| `kids`. **Overrides** AI detection. Leave blank to auto-detect. |
+| `gtin` | no | Product-level barcode (UPC/EAN/GTIN) for single-SKU products. For variants use `variantBarcode`. |
 | `lengthCm` / `widthCm` / `heightCm` | no | Package size in cm — for accurate shipping rates + the ad feed. |
 | `imageUrls` | recommended | One or more URLs, separated by `|` or newlines. Shared across all variants. |
 | `sourceUrl` | no | Original product URL (kept as import metadata). |
@@ -100,9 +103,11 @@ Notes on the example:
 
 ## Fields you do NOT put in the CSV (handled for you)
 
-- English name/description, `slug`, `gender`, `age_group`, `color`, `material`,
-  category, tags/keywords, embeddings, and per-SKU inventory records — all derived
-  automatically. Provide `attributes` only to add specs the AI can't infer.
+- English name/description, `slug`, `color`, `material`, category, tags/keywords,
+  embeddings, and per-SKU inventory records — all derived automatically.
+- `gender` / `ageGroup` are auto-detected too, but you **can** set the columns above
+  to override the AI when it's unsure (e.g. unisex items the name doesn't disambiguate).
+- Provide `attributes` only to add specs the AI can't infer.
 
 ## Roadmap (not yet supported)
 
