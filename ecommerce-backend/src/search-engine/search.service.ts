@@ -109,7 +109,7 @@ export class CatalogSearchService {
     // 5) Ranking: explicit sort overrides relevance; otherwise business re-rank.
     order = params.sort
       ? this.applySort(order, byId, params.sort)
-      : this.businessRerank(order, byId);
+      : this.businessRerank(order, byId, understood?.filters?.gender);
 
     // 6) Paginate + hydrate from indexed _source (already localized)
     const total = Math.max(lexical.total, order.length);
@@ -204,7 +204,7 @@ export class CatalogSearchService {
     return [...order].sort((x, y) => fn(src(x), src(y)));
   }
 
-  private businessRerank(order: string[], byId: Map<string, Hit>): string[] {
+  private businessRerank(order: string[], byId: Map<string, Hit>, queryGender?: string): string[] {
     const n = order.length || 1;
     const scored = order.map((id, idx) => {
       const s = byId.get(id)?.source || {};
@@ -216,10 +216,30 @@ export class CatalogSearchService {
         W.relevance * relevance +
         W.rating * rating +
         W.sold * Math.min(sold, 1) +
-        W.featured * featured;
+        W.featured * featured +
+        this.genderAdjust(queryGender, s);
       return { id, score };
     });
     return scored.sort((a, b) => b.score - a.score).map((x) => x.id);
+  }
+
+  /**
+   * Gender-intent reranking. When the query targets an audience (e.g. "women's
+   * shoes"), lift matching + unisex items and push the opposite adult gender down.
+   * REORDER only — never a hard filter, so results are never zeroed out. Safe now
+   * that normalization gives products near-complete `gender` attributes.
+   */
+  private genderAdjust(queryGender: string | undefined, s: Record<string, any>): number {
+    if (!queryGender) return 0;
+    const g = (s.attributes || []).find((a: any) => a?.key === 'gender')?.value;
+    if (!g) return 0;
+    if (g === queryGender) return 0.35;
+    if (g === 'unisex') return 0.05;
+    const opposite =
+      (queryGender === 'women' && g === 'men') || (queryGender === 'men' && g === 'women');
+    if (opposite) return -0.8;
+    if (queryGender !== 'kids' && g === 'kids') return -0.4; // don't surface kids for adult queries
+    return 0;
   }
 
   private toResult(s: Record<string, any>, locale: string): CatalogSearchResult {

@@ -20,6 +20,8 @@ export interface UnderstoodQuery {
     brandSlug?: string;
     priceMin?: number;
     priceMax?: number;
+    /** Target audience gender, when the query implies one (men/women/unisex/kids). */
+    gender?: 'men' | 'women' | 'unisex' | 'kids';
     attributes?: { key: string; value: string }[];
   };
   intent: 'search' | 'question' | 'navigational';
@@ -56,11 +58,14 @@ export class QueryUnderstandingService {
       `with this exact shape:\n` +
       `{"cleaned": string, "queries": {${locales.map((l) => `"${l}": string`).join(', ')}}, ` +
       `"language": "en"|"so", "filters": {"categorySlug"?: string, "brandSlug"?: string, ` +
-      `"priceMin"?: number, "priceMax"?: number, "attributes"?: [{"key": string, "value": string}]}, ` +
+      `"priceMin"?: number, "priceMax"?: number, "gender"?: "men"|"women"|"unisex"|"kids", ` +
+      `"attributes"?: [{"key": string, "value": string}]}, ` +
       `"intent": "search"|"question"|"navigational"}\n` +
       `Rules: fix spelling; expand Somali dialect/loanword variants; translate the ` +
       `query into every listed locale; extract price ranges (e.g. "ka hooseeya 50 dollar" ` +
-      `=> priceMax 50) and obvious attributes (color/size/storage). Return ONLY the JSON.`;
+      `=> priceMax 50); set "gender" when the query targets an audience ` +
+      `(women/for her/kadhinka dumarka => women; men/for him/raga => men; kids/children/carruurta => kids); ` +
+      `extract obvious attributes (color/size/storage). Return ONLY the JSON.`;
 
     try {
       const res = await postJson<any>(
@@ -100,6 +105,9 @@ export class QueryUnderstandingService {
         brandSlug: parsed?.filters?.brandSlug,
         priceMin: numOrUndef(parsed?.filters?.priceMin),
         priceMax: numOrUndef(parsed?.filters?.priceMax),
+        gender: ['men', 'women', 'unisex', 'kids'].includes(parsed?.filters?.gender)
+          ? parsed.filters.gender
+          : undefined,
         attributes: Array.isArray(parsed?.filters?.attributes)
           ? parsed.filters.attributes
               .filter((a: any) => a?.key && a?.value)
