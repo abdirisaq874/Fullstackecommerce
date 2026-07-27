@@ -96,6 +96,48 @@ export class ProductService {
   }
 
   /**
+   * When a seller edits a product's name or attributes to a non-English value,
+   * re-canonicalize to English so the catalog stays English. Only writes back the
+   * field(s) actually changing (no data loss), refreshes localizations.en, and drops
+   * stale localizations.so so the reindex (product.updated → indexer) re-translates
+   * Somali from the new English. Products edited in English keep the seller's input.
+   */
+  private async maybeNormalizeUpdate(id: string, dto: any): Promise<void> {
+    if (!this.normalization.enabled) return;
+    const changingName = typeof dto?.name === 'string' && !!dto.name.trim();
+    const changingAttrs = Array.isArray(dto?.attributes) && dto.attributes.length > 0;
+    if (!changingName && !changingAttrs) return;
+    try {
+      const existing: any = await this.productModel
+        .findById(id)
+        .select('name shortDescription description attributes localizations')
+        .lean();
+      const n = await this.normalization.normalize({
+        name: changingName ? dto.name : existing?.name,
+        shortDescription: dto.shortDescription ?? existing?.shortDescription,
+        description: dto.description ?? existing?.description,
+        attributes: changingAttrs ? dto.attributes : existing?.attributes,
+      });
+      if (!n || n.sourceLang === 'en') return; // already English → keep seller input
+      if (changingName) dto.name = n.name;
+      if (changingAttrs && n.attributes?.length) dto.attributes = n.attributes;
+      // Merge (preserve other locales), refresh en, drop stale so for re-translation.
+      const loc: any = { ...(dto.localizations || existing?.localizations || {}) };
+      loc.en = {
+        ...(loc.en || {}),
+        name: n.name,
+        shortDescription: n.shortDescription ?? loc.en?.shortDescription,
+        description: n.description ?? loc.en?.description,
+      };
+      delete loc.so;
+      dto.localizations = loc;
+      dto.normalizedAt = new Date();
+    } catch {
+      /* never block a product update on the LLM */
+    }
+  }
+
+  /**
    * Create many products in one request (CSV bulk import). Runs server-side in a
    * single HTTP call so it isn't subject to the per-request rate limit, and
    * isolates failures per row (a bad row doesn't abort the rest).
@@ -262,6 +304,8 @@ export class ProductService {
       _id: new Types.ObjectId(id),
       ...(role === 'admin' ? {} : { sellerId: new Types.ObjectId(actorId) }),
     };
+
+    await this.maybeNormalizeUpdate(id, dto as any);
 
     const product = await this.productModel.findOneAndUpdate(
       filter,
