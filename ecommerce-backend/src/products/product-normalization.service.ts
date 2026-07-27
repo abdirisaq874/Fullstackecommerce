@@ -8,6 +8,7 @@ export interface NormalizedProduct {
   shortDescription?: string;
   description?: string;
   gender?: string | null;
+  ageGroup?: string | null;
   attributes: { key: string; value: string }[];
 }
 
@@ -26,6 +27,7 @@ const SYSTEM =
   '{"sourceLang":"tr|en|..","name":"clean concise English title",' +
   '"shortDescription":"one-sentence English description",' +
   '"gender":"men|women|unisex|kids|null",' +
+  '"ageGroup":"adult|kids|null",' +
   '"attributes":[{"key":"canonical_snake_case_english","value":"normalized english value"}]}\n' +
   'Rules:\n' +
   '- Translate Turkish->English by MEANING. KEEP brand names, model numbers and SKUs EXACTLY (never translate identifiers).\n' +
@@ -37,7 +39,8 @@ const SYSTEM =
   'Desen->pattern, Topuk Tipi->heel_type, Menşei->origin_country, Beden->size, Cinsiyet->gender, ' +
   'Bağlama Şekli->closure_type, Kumaş Tipi->fabric_type).\n' +
   '- Normalize attribute VALUES to lowercase English (Siyah->black, Beyaz->white, Kadın->women, Erkek->men, Deri->leather).\n' +
-  '- Always include color/gender/material attributes when inferable from the name, even if absent.\n' +
+  '- Always include color, gender, age_group and material attributes when inferable from the name, even if absent ' +
+  '(age_group: adult unless the item is clearly for children/babies → kids).\n' +
   '- Only include attributes you are confident about; do not invent specs.\n' +
   '- Output ONLY the JSON.';
 
@@ -128,6 +131,25 @@ export class ProductNormalizationService {
     target.embeddingInput = undefined; // force re-embed from English on index
   }
 
+  /**
+   * For products that are ALREADY English: keep the seller's name/copy untouched but
+   * ADD any inferred enrichment attributes (gender, age_group, color, material) the
+   * product is missing — so EVERY product carries them (powers the search gender
+   * rerank + the Meta/Google ad feed) without rewriting seller input. Returns whether
+   * anything was added.
+   */
+  enrichAttributes(target: any, n: NormalizedProduct): boolean {
+    const existing: { key: string; value: string }[] = target.attributes || [];
+    const have = (k: string) => existing.some((a) => String(a.key).toLowerCase() === k);
+    const ENRICH = new Set(['gender', 'age_group', 'color', 'material']);
+    const additions = (n.attributes || []).filter(
+      (a) => ENRICH.has(String(a.key).toLowerCase()) && !have(String(a.key).toLowerCase()),
+    );
+    if (!additions.length) return false;
+    target.attributes = [...existing, ...additions];
+    return true;
+  }
+
   private clean(p: any): NormalizedProduct | null {
     if (!p?.name || typeof p.name !== 'string') return null;
     const attrs = Array.isArray(p.attributes)
@@ -142,12 +164,17 @@ export class ProductNormalizationService {
       p.gender && ['men', 'women', 'unisex', 'kids'].includes(String(p.gender)) ? String(p.gender) : null;
     if (gender && !attrs.find((a: { key: string }) => a.key === 'gender'))
       attrs.push({ key: 'gender', value: gender });
+    const ageGroup =
+      p.ageGroup && ['adult', 'kids'].includes(String(p.ageGroup)) ? String(p.ageGroup) : null;
+    if (ageGroup && !attrs.find((a: { key: string }) => a.key === 'age_group'))
+      attrs.push({ key: 'age_group', value: ageGroup });
     return {
       sourceLang: (p.sourceLang || 'tr').toString().slice(0, 5),
       name: p.name.trim(),
       shortDescription: p.shortDescription ? String(p.shortDescription).trim() : undefined,
       description: p.description ? String(p.description).trim() : undefined,
       gender,
+      ageGroup,
       attributes: attrs,
     };
   }

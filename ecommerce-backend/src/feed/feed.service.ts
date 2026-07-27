@@ -131,6 +131,26 @@ export class FeedService {
     if (productType) {
       lines.push(this.tag('g:product_type', this.truncate(productType, 750)));
     }
+    // Structured attributes (auto-derived by normalization) → improve Meta/Google
+    // ad eligibility + delivery for apparel/footwear. Map to the feed's vocabularies.
+    const attr = (k: string) =>
+      (p.attributes || []).find((a: any) => String(a.key).toLowerCase() === k)?.value;
+    const genderMap: Record<string, string> = { men: 'male', women: 'female', unisex: 'unisex', kids: 'unisex' };
+    const gAttr = attr('gender');
+    if (gAttr && genderMap[gAttr]) lines.push(this.tag('g:gender', genderMap[gAttr]));
+    const ageGroup = attr('age_group') || (gAttr === 'kids' ? 'kids' : undefined);
+    if (ageGroup && ['newborn', 'infant', 'toddler', 'kids', 'adult'].includes(ageGroup)) {
+      lines.push(this.tag('g:age_group', ageGroup));
+    }
+    const color = attr('color');
+    if (color) lines.push(this.tag('g:color', this.truncate(color, 100)));
+    const material = attr('material');
+    if (material) lines.push(this.tag('g:material', this.truncate(material, 200)));
+    // GTIN from a variant barcode (only if it looks like a real UPC/EAN/GTIN).
+    const gtin = (p.variants || []).find((v: any) => v?.barcode)?.barcode || attr('gtin');
+    if (gtin && /^\d{8,14}$/.test(String(gtin).trim())) {
+      lines.push(this.tag('g:gtin', String(gtin).trim()));
+    }
     lines.push('</item>');
     return lines.join('');
   }

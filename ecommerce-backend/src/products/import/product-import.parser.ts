@@ -19,6 +19,8 @@ export interface ParsedVariant {
   priceOverride?: number;
   barcode?: string;
   weightGrams?: number;
+  /** Per-variant on-hand stock → seeded into per-SKU Inventory (feature A). */
+  stock?: number;
   imageUrl?: string;
 }
 
@@ -159,6 +161,7 @@ export function parseImportFile(buffer: Buffer): ParseResult {
         priceOverride: toNum(r['variantprice']),
         barcode: r['variantbarcode'] || undefined,
         weightGrams: toNum(r['variantweightgrams']),
+        stock: toNum(r['variantstock']),
         imageUrl: /^https?:\/\//i.test(variantImage) ? variantImage : undefined,
       });
     }

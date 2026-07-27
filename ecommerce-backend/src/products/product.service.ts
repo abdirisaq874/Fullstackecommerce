@@ -88,7 +88,11 @@ export class ProductService {
       if (n.sourceLang && n.sourceLang !== 'en') {
         this.normalization.applyNormalization(dto, n);
       } else {
-        dto.normalizedAt = new Date(); // already English — mark processed, keep input
+        // Already English — keep the seller's name/copy, but still auto-enrich
+        // gender/age_group/color/material so every product carries them.
+        const enriched = this.normalization.enrichAttributes(dto, n);
+        dto.normalizedAt = new Date();
+        if (enriched) dto.embeddingInput = undefined;
       }
     } catch {
       /* never block product creation on the LLM */

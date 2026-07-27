@@ -50,27 +50,41 @@ export class ProductImportProcessor extends WorkerHost {
       //    Tag each image with the COLOUR it belongs to (altText = colour value)
       //    so the storefront can switch the gallery per colour; product-level
       //    images fall back to the product name. De-dupe by source URL.
-      const colorOf = (opts: { name: string; value: string }[] | undefined) =>
-        opts?.find((o) => /^(colou?r|renk)$/i.test(o.name))?.value;
-      const specs: { url: string; altText: string }[] = [];
+      const colorOptOf = (opts: { name: string; value: string }[] | undefined) =>
+        opts?.find((o) => /^(colou?r|renk)$/i.test(o.name));
+      type ImgSpec = { url: string; altText: string; appliesTo?: { name: string; value: string }[] };
+      const specs: ImgSpec[] = [];
       const seen = new Set<string>();
       for (const url of product.imageUrls) {
         if (url && !seen.has(url)) {
           seen.add(url);
-          specs.push({ url, altText: product.name });
+          specs.push({ url, altText: product.name }); // shared image (no appliesTo)
         }
       }
       for (const v of product.variants) {
         if (v.imageUrl && !seen.has(v.imageUrl)) {
           seen.add(v.imageUrl);
-          specs.push({ url: v.imageUrl, altText: colorOf(v.options) || product.name });
+          const c = colorOptOf(v.options);
+          // Structured variant-image association (feature B): image is shown for its
+          // colour. Same shape single-create writes → import == create at scale.
+          specs.push({
+            url: v.imageUrl,
+            altText: c?.value || product.name,
+            appliesTo: c ? [{ name: c.name, value: c.value }] : undefined,
+          });
         }
       }
-      const images: { url: string; altText: string; isPrimary: boolean; sortOrder: number }[] = [];
+      const images: (ImgSpec & { isPrimary: boolean; sortOrder: number })[] = [];
       for (const spec of specs) {
         try {
           const url = await this.retry(() => this.uploads.putRemoteImage(spec.url, 'product'));
-          images.push({ url, altText: spec.altText, isPrimary: images.length === 0, sortOrder: images.length });
+          images.push({
+            url,
+            altText: spec.altText,
+            ...(spec.appliesTo ? { appliesTo: spec.appliesTo } : {}),
+            isPrimary: images.length === 0,
+            sortOrder: images.length,
+          });
         } catch (e) {
           this.logger.warn(`image rehost failed (${spec.url}): ${(e as Error).message}`);
         }
@@ -95,6 +109,8 @@ export class ProductImportProcessor extends WorkerHost {
         priceOverride: v.priceOverride,
         barcode: v.barcode,
         weightGrams: v.weightGrams,
+        // Per-variant stock → create() seeds per-SKU Inventory (feature A parity).
+        ...(typeof v.stock === 'number' ? { stock: v.stock } : {}),
         sortOrder: i,
       }));
 
@@ -108,7 +124,11 @@ export class ProductImportProcessor extends WorkerHost {
         basePrice: product.basePrice,
         compareAtPrice: product.compareAtPrice,
         currency: product.currency || 'USD',
-        stock: product.stock ?? 0,
+        // Product-level stock = sum of per-variant stock when provided (matches the
+        // seller-portal single-create behaviour); else the row's own stock.
+        stock: variants.some((v: any) => typeof v.stock === 'number')
+          ? variants.reduce((s: number, v: any) => s + (v.stock || 0), 0)
+          : (product.stock ?? 0),
         status: product.status || 'draft',
         images,
         attributes: product.attributes,
