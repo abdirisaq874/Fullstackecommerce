@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Product } from '../products/schemas/product.schema';
 import { Order } from '../orders/schemas/order.schema';
+import { UserInteraction } from './schemas/user-interaction.schema';
 import { RetrievalService } from '../search-engine/retrieval/retrieval.service';
 
 const CARD_FIELDS = 'name slug basePrice compareAtPrice currency images avgRating reviewCount totalSold isFeatured categoryId brandId localizations status';
@@ -21,8 +22,32 @@ export class RecommendationsService {
   constructor(
     @InjectModel(Product.name) private readonly productModel: Model<Product>,
     @InjectModel(Order.name) private readonly orderModel: Model<Order>,
+    @InjectModel(UserInteraction.name) private readonly interactionModel: Model<UserInteraction>,
     private readonly retrieval: RetrievalService,
   ) {}
+
+  /**
+   * Record a behavioural signal (view / cart / purchase). Upserts one row per
+   * (user, product, type) and refreshes updatedAt so recency reflects the last
+   * touch. No-op for guests (no userId) — they rely on client recently-viewed.
+   */
+  async recordInteraction(
+    userId: string | undefined,
+    productId: string,
+    type: 'view' | 'cart' | 'purchase',
+  ): Promise<void> {
+    if (!userId || !productId || !Types.ObjectId.isValid(productId)) return;
+    try {
+      const p = await this.productModel.findById(productId).select('categoryId').lean();
+      await this.interactionModel.updateOne(
+        { userId: new Types.ObjectId(userId), productId: new Types.ObjectId(productId), type },
+        { $set: { categoryId: (p as any)?.categoryId, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
+        { upsert: true },
+      );
+    } catch (e) {
+      this.logger.warn(`recordInteraction failed: ${(e as Error).message}`);
+    }
+  }
 
   /** Fetch active products by id, preserving the given order. */
   private async byIds(ids: string[]): Promise<any[]> {
@@ -91,48 +116,65 @@ export class RecommendationsService {
    * store-wide trending when there is no signal yet.
    */
   async forYou(userId: string | undefined, recentlyViewedIds: string[] = [], limit = 12): Promise<any[]> {
+    const WEIGHT: Record<string, number> = { purchase: 5, cart: 3, view: 1 };
     const seen = new Set<string>(recentlyViewedIds);
-    const categoryIds = new Set<string>();
+    const catScore = new Map<string, number>();
+    const bump = (cat: any, by: number) => {
+      if (!cat) return;
+      const k = String(cat);
+      catScore.set(k, (catScore.get(k) || 0) + by);
+    };
 
-    // Purchase history → categories + seen ids
-    if (userId) {
-      const orders = await this.orderModel
-        .find({ userId: new Types.ObjectId(userId), status: { $nin: NON_SELLABLE } })
-        .select('items.productId')
+    // 1) Persistent behavioural profile: this user's views/cart/purchases, most
+    //    recent first, weighted by type × recency. This is the "learned" signal.
+    if (userId && Types.ObjectId.isValid(userId)) {
+      const ix = await this.interactionModel
+        .find({ userId: new Types.ObjectId(userId) })
+        .sort({ updatedAt: -1 })
+        .limit(100)
         .lean();
-      for (const o of orders as any[]) for (const it of o.items || []) seen.add(String(it.productId));
+      ix.forEach((r: any, i) => {
+        seen.add(String(r.productId));
+        const recency = 1 / (1 + i * 0.05); // newer interactions weigh more
+        bump(r.categoryId, (WEIGHT[r.type] || 1) * recency);
+      });
     }
 
-    // Recently-viewed + purchased products → their categories
-    if (seen.size) {
-      const seedProducts = await this.productModel
-        .find({ _id: { $in: [...seen].map((i) => new Types.ObjectId(i)) } })
+    // 2) Client recently-viewed (this session/device) → light category signal.
+    //    Also covers guests, who have no server profile yet.
+    if (recentlyViewedIds.length) {
+      const seed = await this.productModel
+        .find({ _id: { $in: recentlyViewedIds.filter((i) => Types.ObjectId.isValid(i)).map((i) => new Types.ObjectId(i)) } })
         .select('categoryId')
         .lean();
-      for (const p of seedProducts as any[]) if (p.categoryId) categoryIds.add(String(p.categoryId));
+      for (const p of seed as any[]) bump(p.categoryId, 1);
     }
 
-    const excludeIds = [...seen].map((i) => new Types.ObjectId(i));
+    const topCats = [...catScore.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([c]) => new Types.ObjectId(c));
+    const excludeIds = [...seen].filter((i) => Types.ObjectId.isValid(i)).map((i) => new Types.ObjectId(i));
 
-    if (categoryIds.size) {
+    // 3) Best-selling active products in the user's affinity categories, minus
+    //    what they've already seen/bought; top up with trending if thin.
+    if (topCats.length) {
       const recs = await this.productModel
-        .find({
-          categoryId: { $in: [...categoryIds].map((i) => new Types.ObjectId(i)) },
-          status: 'active',
-          isDeleted: { $ne: true },
-          _id: { $nin: excludeIds },
-        })
+        .find({ categoryId: { $in: topCats }, status: 'active', isDeleted: { $ne: true }, _id: { $nin: excludeIds } })
         .select(CARD_FIELDS)
         .sort({ totalSold: -1, avgRating: -1 })
         .limit(limit)
         .lean();
       if (recs.length >= Math.min(4, limit)) return recs;
-      // Not enough in-category → top up with trending below.
       const have = new Set(recs.map((r: any) => String(r._id)));
-      const trending = await this.trending(limit - recs.length, [...excludeIds, ...[...have].map((i) => new Types.ObjectId(i))]);
+      const trending = await this.trending(limit - recs.length, [
+        ...excludeIds,
+        ...[...have].map((i) => new Types.ObjectId(i)),
+      ]);
       return [...recs, ...trending];
     }
 
+    // 4) Cold start (no signal) → store-wide trending.
     return this.trending(limit, excludeIds);
   }
 

@@ -16,6 +16,17 @@ import { Types } from 'mongoose';
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {}
 
+// ─── Optional JWT Auth Guard ───
+// Populates req.user when a valid Bearer token is present, but NEVER rejects —
+// so a route works for guests and logged-in users alike (used for personalization
+// that gracefully degrades to non-personalized for anonymous visitors).
+@Injectable()
+export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
+  handleRequest(_err: any, user: any) {
+    return user || undefined;
+  }
+}
+
 // ─── Roles Decorator ───
 export const ROLES_KEY = 'roles';
 export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
@@ -62,4 +73,10 @@ export function Auth(...roles: string[]) {
     Roles(...roles),
     ApiBearerAuth(),
   );
+}
+
+// ─── Optional Auth Decorator ───
+// Attaches the user if authenticated; allows guests through otherwise.
+export function OptionalAuth() {
+  return applyDecorators(UseGuards(OptionalJwtAuthGuard), ApiBearerAuth());
 }
