@@ -208,6 +208,15 @@ export function buildProductDto(form: any): any {
   if (form.currency)         dto.currency         = form.currency;
   if (form.status)           dto.status           = form.status;
   if (form.isFeatured)       dto.isFeatured       = true;
+  if (form.condition && form.condition !== 'new') dto.condition = form.condition;
+  // Package dimensions (cm) for shipping — only send the values the seller filled.
+  const d = form.packageDimensionsCm || {};
+  const dims: Record<string, number> = {};
+  for (const k of ['length', 'width', 'height'] as const) {
+    const n = Number(d[k]);
+    if (Number.isFinite(n) && n > 0) dims[k] = n;
+  }
+  if (Object.keys(dims).length) dto.packageDimensionsCm = dims;
   // Simple stock model: one product-level quantity — sum of variant stock when the
   // product has variants, otherwise the single "stock on hand" value.
   if (form.hasVariants && form.variants?.length) {

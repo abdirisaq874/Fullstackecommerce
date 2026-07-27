@@ -108,6 +108,15 @@ export const productFormSchema = z
     keywords: z.array(z.string()).default([]),
     status: productStatusSchema.default('draft'),
     isFeatured: z.boolean().default(false),
+    // Seller-supplied (not AI-inferable): item condition + package size for shipping.
+    condition: z.enum(['new', 'used', 'refurbished']).default('new'),
+    packageDimensionsCm: z
+      .object({
+        length: z.string().optional().default(''),
+        width: z.string().optional().default(''),
+        height: z.string().optional().default(''),
+      })
+      .default({ length: '', width: '', height: '' }),
 
     // pricing
     basePrice: requiredPriceString,

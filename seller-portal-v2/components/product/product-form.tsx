@@ -70,6 +70,8 @@ const blankDefaults: ProductFormValues = {
   keywords: [],
   status: 'draft',
   isFeatured: false,
+  condition: 'new',
+  packageDimensionsCm: { length: '', width: '', height: '' },
   basePrice: '',
   compareAtPrice: '',
   currency: 'USD',
@@ -102,6 +104,14 @@ function defaultsFromExisting(existing: Product): ProductFormValues {
     keywords: (existing as { keywords?: string[] }).keywords ?? [],
     status: existing.status,
     isFeatured: !!existing.isFeatured,
+    condition: (['new', 'used', 'refurbished'].includes((existing as any).condition)
+      ? (existing as any).condition
+      : 'new') as 'new' | 'used' | 'refurbished',
+    packageDimensionsCm: {
+      length: (existing as any).packageDimensionsCm?.length != null ? String((existing as any).packageDimensionsCm.length) : '',
+      width: (existing as any).packageDimensionsCm?.width != null ? String((existing as any).packageDimensionsCm.width) : '',
+      height: (existing as any).packageDimensionsCm?.height != null ? String((existing as any).packageDimensionsCm.height) : '',
+    },
     basePrice: String(existing.basePrice ?? ''),
     compareAtPrice: existing.compareAtPrice != null ? String(existing.compareAtPrice) : '',
     currency: existing.currency || 'USD',
@@ -829,6 +839,36 @@ function BasicsSection({
             Feature this product on the storefront
           </label>
           <p className="text-xs text-stone-500 mt-1 ml-6">Featured products appear in curated areas like the homepage.</p>
+        </div>
+      )}
+      {activeLocale === 'en' && (
+        <div className="mt-5 pt-5 border-t border-stone-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-stone-800 mb-1">Condition</label>
+            <Select {...register('condition')}>
+              <option value="new">New</option>
+              <option value="used">Used</option>
+              <option value="refurbished">Refurbished</option>
+            </Select>
+            <p className="text-xs text-stone-500 mt-1">Gender, colour &amp; material are detected automatically.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-stone-800 mb-1">Package size — cm (optional)</label>
+            <div className="flex gap-2">
+              {(['length', 'width', 'height'] as const).map((k) => (
+                <input
+                  key={k}
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  placeholder={k.charAt(0).toUpperCase()}
+                  {...register(`packageDimensionsCm.${k}` as const)}
+                  className="w-full px-2 py-1.5 text-sm border border-stone-300 rounded outline-none focus:border-brand-600"
+                />
+              ))}
+            </div>
+            <p className="text-xs text-stone-500 mt-1">L × W × H — used for accurate shipping rates.</p>
+          </div>
         </div>
       )}
       {/* Silence unused-deps lint — control reserved for future Controllers. */}
