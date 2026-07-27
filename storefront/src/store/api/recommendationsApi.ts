@@ -22,6 +22,11 @@ export const recommendationsApi = apiSlice.injectEndpoints({
         return `/recommendations/for-you?limit=${limit}${v ? `&viewed=${v}` : ''}`;
       },
     }),
+    // Record a behavioural signal. The backend only persists it for logged-in
+    // users (it needs the auth token), so callers should gate on being signed in.
+    trackInteraction: builder.mutation<{ ok: boolean }, { productId: string; type: 'view' | 'cart' | 'purchase' }>({
+      query: (body) => ({ url: '/recommendations/track', method: 'POST', body }),
+    }),
   }),
 });
 
@@ -29,4 +34,5 @@ export const {
   useRelatedProductsQuery,
   useFrequentlyBoughtTogetherQuery,
   useForYouQuery,
+  useTrackInteractionMutation,
 } = recommendationsApi;

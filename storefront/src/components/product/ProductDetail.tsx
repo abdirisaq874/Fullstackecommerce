@@ -24,6 +24,7 @@ import { ProductReviews } from './ProductReviews';
 import { RelatedProducts } from './RelatedProducts';
 import { FrequentlyBoughtTogether } from './FrequentlyBoughtTogether';
 import { useRecentlyViewed } from '@/hooks/useRecentlyViewed';
+import { useTrackInteractionMutation } from '@/store/api/recommendationsApi';
 import * as metaPixel from '@/lib/meta-pixel';
 import type { Category } from '@/types';
 
@@ -62,6 +63,7 @@ export function ProductDetail({ slug }: { slug: string }) {
   const [addToCart, { isLoading: adding }] = useAddToCartMutation();
   const [createThread, { isLoading: messaging }] = useCreateThreadMutation();
   const { track } = useRecentlyViewed();
+  const [trackInteraction] = useTrackInteractionMutation();
   const sellerRef = (product as any)?.sellerId as string | undefined;
   const { data: sellerInfo } = useSellerQuery(sellerRef ?? '', { skip: !sellerRef });
 
@@ -113,7 +115,9 @@ export function ProductDetail({ slug }: { slug: string }) {
       currency: product.currency,
       imageUrl: img?.url,
     });
-  }, [product, track]);
+    // Server-side profile signal (logged-in only → persistent "For you").
+    if (token) trackInteraction({ productId: product._id, type: 'view' }).catch(() => {});
+  }, [product, track, token, trackInteraction]);
 
   // Meta Pixel ViewContent — content id is the slug (matches the catalog feed).
   useEffect(() => {
@@ -232,6 +236,8 @@ export function ProductDetail({ slug }: { slug: string }) {
       }
       try {
         await addToCart({ productId: product._id, variantSku: selectedVariant?.sku, quantity: qty }).unwrap();
+        // Behavioural signal: add-to-cart weighs higher than a view in "For you".
+        if (token) trackInteraction({ productId: product._id, type: 'cart' }).catch(() => {});
         metaPixel.addToCart({
           id: product.slug,
           name: product.name,
