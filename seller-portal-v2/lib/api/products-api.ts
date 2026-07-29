@@ -291,16 +291,6 @@ export const productsApi = baseApi.injectEndpoints({
       transformResponse: (res: ResponseEnvelope<ImportJob> | ImportJob) => unwrapEnvelope<ImportJob>(res),
       invalidatesTags: [{ type: 'Import', id: 'LIST' }],
     }),
-
-    // One-off maintenance: strip trailing commas off stored image URLs so broken
-    // colour swatches / thumbnails render. Store-scoped; safe to run repeatedly.
-    cleanImageUrls: builder.mutation<{ scanned: number; changed: number; cleaned: number }, void>({
-      query: () => ({ url: '/products/maintenance/clean-image-urls', method: 'POST' }),
-      transformResponse: (
-        res: ResponseEnvelope<{ scanned: number; changed: number; cleaned: number }> | { scanned: number; changed: number; cleaned: number },
-      ) => unwrapEnvelope(res),
-      invalidatesTags: [{ type: 'Product', id: 'LIST' }],
-    }),
   }),
 });
 
@@ -319,5 +309,4 @@ export const {
   useListImportsQuery,
   useRetryImportMutation,
   useCancelImportMutation,
-  useCleanImageUrlsMutation,
 } = productsApi;

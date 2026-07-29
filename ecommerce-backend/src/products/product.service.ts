@@ -391,61 +391,6 @@ export class ProductService {
     return { matched: result.matchedCount, modified: result.modifiedCount };
   }
 
-  /**
-   * Maintenance: strip trailing commas/whitespace from stored product image
-   * URLs. Some bulk-imported images were saved as ".../image.jpg," (trailing
-   * comma) and 404 — breaking colour swatches and thumbnails. Store-scoped:
-   * non-admins only clean the active store's products; admins clean all.
-   * Idempotent — safe to run repeatedly.
-   */
-  async cleanImageUrls(
-    storeId: string,
-    role?: string,
-  ): Promise<{ scanned: number; changed: number; cleaned: number }> {
-    const clean = (u: unknown): string =>
-      String(u ?? '').trim().replace(/[;,]+$/, '').trim();
-
-    const filter: FilterQuery<Product> = {
-      'images.0': { $exists: true },
-      ...(role === 'admin' ? {} : { sellerId: new Types.ObjectId(storeId) }),
-    };
-
-    let scanned = 0;
-    let changed = 0;
-    let cleaned = 0;
-    const cursor = this.productModel.find(filter, { images: 1 }).lean().cursor();
-
-    for await (const p of cursor) {
-      scanned++;
-      const images: any[] = Array.isArray((p as any).images) ? (p as any).images : [];
-      let dirty = false;
-      const next: any[] = [];
-      for (const img of images) {
-        const original = String(img?.url ?? '');
-        const url = clean(original);
-        if (url !== original) {
-          dirty = true;
-          cleaned++;
-        }
-        if (!/^https?:\/\//i.test(url)) {
-          // only reachable if the URL was already junk (never from a comma strip)
-          dirty = true;
-          continue;
-        }
-        next.push({ ...img, url });
-      }
-      if (!dirty) continue;
-      if (next.length && !next.some((i) => i.isPrimary)) next[0].isPrimary = true;
-      next.forEach((i, idx) => {
-        i.sortOrder = idx;
-      });
-      changed++;
-      await this.productModel.updateOne({ _id: (p as any)._id }, { $set: { images: next } });
-    }
-
-    return { scanned, changed, cleaned };
-  }
-
   async getFeatured(limit: number = 12): Promise<ProductDocument[]> {
     return this.productModel
       .find({ status: 'active', isFeatured: true })
