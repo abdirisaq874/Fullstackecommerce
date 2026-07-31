@@ -65,9 +65,11 @@ export default registerAs('search', () => ({
   openrouter: {
     apiKey: process.env.OPENROUTER_API_KEY || '',
     baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+    // NB: google/gemini-2.0-flash-001 was removed from OpenRouter (404) — defaults
+    // must point at a model OpenRouter currently serves, else QU/translation break.
     translationModel:
-      process.env.OPENROUTER_TRANSLATION_MODEL || 'google/gemini-2.0-flash-001',
+      process.env.OPENROUTER_TRANSLATION_MODEL || 'google/gemini-2.5-flash',
     queryUnderstandingModel:
-      process.env.OPENROUTER_QU_MODEL || 'google/gemini-2.0-flash-001',
+      process.env.OPENROUTER_QU_MODEL || 'google/gemini-2.5-flash',
   },
 }));

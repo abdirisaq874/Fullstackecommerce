@@ -76,6 +76,12 @@ export class CatalogSearchService {
     const category = filters.categorySlug
       ? await this.categoryModel.findOne({ slug: filters.categorySlug }).lean()
       : null;
+    // Query-understanding can infer a categorySlug that isn't a real category
+    // (e.g. "sandals"); applying it as a HARD filter zeroes out results. If it
+    // doesn't resolve, drop it and fall back to the text/vector query.
+    if (filters.categorySlug && !category) {
+      filters.categorySlug = undefined;
+    }
 
     // 2) Parallel retrieval + facets (facets get the text query too, so they
     //    reflect the actual results — not the whole catalog).
