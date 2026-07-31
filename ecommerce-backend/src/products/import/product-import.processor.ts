@@ -55,10 +55,22 @@ export class ProductImportProcessor extends WorkerHost {
       type ImgSpec = { url: string; altText: string; appliesTo?: { name: string; value: string }[] };
       const specs: ImgSpec[] = [];
       const seen = new Set<string>();
+      // Product-level images (from `imageUrls`) are the PRIMARY colour's photos
+      // — the first variant's colour. Tag them with that colour so the storefront
+      // switches them off when another colour is picked (instead of treating them
+      // as shared and showing them for every colour). Colourless products keep
+      // them un-tagged (truly shared).
+      const primaryColor = product.variants
+        .map((v) => colorOptOf(v.options))
+        .find((c): c is { name: string; value: string } => !!c);
       for (const url of product.imageUrls) {
         if (url && !seen.has(url)) {
           seen.add(url);
-          specs.push({ url, altText: product.name }); // shared image (no appliesTo)
+          specs.push({
+            url,
+            altText: primaryColor?.value || product.name,
+            ...(primaryColor ? { appliesTo: [{ name: primaryColor.name, value: primaryColor.value }] } : {}),
+          });
         }
       }
       for (const v of product.variants) {

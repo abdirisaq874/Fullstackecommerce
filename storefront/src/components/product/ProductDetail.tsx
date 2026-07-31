@@ -165,6 +165,17 @@ export function ProductDetail({ slug }: { slug: string }) {
   // appliesTo for whichever dimension owns that value. Images with neither are
   // shared and always show. Result = shared images + the ones matching selection.
   const dimForValue = (val: string) => optionGroups.find((g) => g.values.includes(val))?.name;
+  // The colour dimension (if any) and the PRIMARY colour = the first variant's
+  // colour. Product-level gallery images (imported from `imageUrls`) carry no
+  // `appliesTo`, and they are the primary colour's photos — so we bind them to
+  // that colour. Otherwise they'd count as "shared" and show for EVERY colour,
+  // which keeps the main image stuck on the primary colour when another colour
+  // is picked (only the newly-selected colour's photo appears, as a thumbnail).
+  const colorGroup = optionGroups.find((g) => /^(colou?r|renk)$/i.test(g.name));
+  const colorName = colorGroup?.name;
+  const primaryColor = colorName
+    ? product.variants?.[0]?.options?.find((o) => o.name === colorName)?.value
+    : undefined;
   const imageApplies = (im: (typeof allImages)[number]) => {
     const rules =
       im.appliesTo && im.appliesTo.length
@@ -172,7 +183,12 @@ export function ProductDetail({ slug }: { slug: string }) {
         : im.altText && dimForValue(im.altText)
           ? [{ name: dimForValue(im.altText) as string, value: im.altText }]
           : [];
-    if (!rules.length) return true; // shared / general image
+    if (!rules.length) {
+      // Un-tagged image → belongs to the primary colour when the product has a
+      // colour dimension; a colourless product keeps it as a truly shared image.
+      if (colorName && primaryColor) return selected[colorName] === primaryColor;
+      return true;
+    }
     return rules.every((r) => selected[r.name] === r.value);
   };
   const matched = allImages.filter(imageApplies);
@@ -374,12 +390,19 @@ export function ProductDetail({ slug }: { slug: string }) {
                     const soldOut = !isValueAvailable(g.name, val);
                     if (isColor) {
                       // Visual swatch: prefer the product photo tagged with this
-                      // colour, then a solid hex chip, then an abbreviated label.
-                      const swatchImg = allImages.find(
-                        (im) =>
-                          im.appliesTo?.some((a) => a.name === g.name && a.value === val) ||
-                          im.altText === val,
-                      )?.url;
+                      // colour; for the PRIMARY colour (whose photos are the
+                      // un-tagged product-level gallery) fall back to the primary
+                      // image so its swatch shows a photo like the other colours;
+                      // then a solid hex chip, then an abbreviated label.
+                      const swatchImg =
+                        allImages.find(
+                          (im) =>
+                            im.appliesTo?.some((a) => a.name === g.name && a.value === val) ||
+                            im.altText === val,
+                        )?.url ??
+                        (val === primaryColor
+                          ? (allImages.find((im) => im.isPrimary) ?? allImages[0])?.url
+                          : undefined);
                       const hex = colorToHex(val);
                       return (
                         <button
