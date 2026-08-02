@@ -21,7 +21,9 @@ export interface ParsedVariant {
   weightGrams?: number;
   /** Per-variant on-hand stock → seeded into per-SKU Inventory (feature A). */
   stock?: number;
-  imageUrl?: string;
+  /** One OR MANY images for this variant (pipe-separated in the file). Each is
+   *  tagged to the variant's colour on import (feature B). */
+  imageUrls?: string[];
 }
 
 export interface ParsedProduct {
@@ -185,7 +187,6 @@ export function parseImportFile(buffer: Buffer): ParseResult {
 
     const options = readOptions(r);
     const variantSku = r['variantsku'];
-    const variantImage = cleanUrl(r['variantimageurl']);
     if (options.length || variantSku) {
       p.variants.push({
         sku: variantSku || undefined,
@@ -195,7 +196,8 @@ export function parseImportFile(buffer: Buffer): ParseResult {
         barcode: r['variantbarcode'] || undefined,
         weightGrams: toNum(r['variantweightgrams']),
         stock: toNum(r['variantstock']),
-        imageUrl: /^https?:\/\//i.test(variantImage) ? variantImage : undefined,
+        // Pipe-separated → one or more images, all tagged to this variant's colour.
+        imageUrls: readUrls(r['variantimageurl']),
       });
     }
     // NB: a variant image stays on the variant (v.imageUrl) — it is NOT merged

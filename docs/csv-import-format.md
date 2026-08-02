@@ -61,7 +61,7 @@ Headers are **case-insensitive** and trimmed. Encoding must be **UTF-8**.
 | `variantStock` | **NEW** | Per-variant on-hand quantity → seeded into per-SKU inventory. This is what makes "out of stock" show per size/colour instead of for the whole product. |
 | `variantBarcode` | no | **UPC / EAN / GTIN** — see below. Fed to Meta/Google as `g:gtin` (improves ad delivery). |
 | `variantWeightGrams` | no | For shipping. |
-| `variantImageUrl` | no | One image for this variant; auto-tagged to its colour. |
+| `variantImageUrl` | no | One **or more** images for this variant, separated by `|` — **all** auto-tagged to its colour, so a colour can show several photos that switch in when it's selected. Put *shared* images (size chart, generic shots) in `imageUrls` instead. |
 
 ## What GTIN / barcode does for you
 

@@ -74,16 +74,18 @@ export class ProductImportProcessor extends WorkerHost {
         }
       }
       for (const v of product.variants) {
-        if (v.imageUrl && !seen.has(v.imageUrl)) {
-          seen.add(v.imageUrl);
-          const c = colorOptOf(v.options);
-          // Structured variant-image association (feature B): image is shown for its
-          // colour. Same shape single-create writes → import == create at scale.
-          specs.push({
-            url: v.imageUrl,
-            altText: c?.value || product.name,
-            appliesTo: c ? [{ name: c.name, value: c.value }] : undefined,
-          });
+        const c = colorOptOf(v.options);
+        // Structured variant-image association (feature B): every image on this
+        // variant row is shown for its colour. Supports MANY images per colour.
+        for (const url of v.imageUrls || []) {
+          if (url && !seen.has(url)) {
+            seen.add(url);
+            specs.push({
+              url,
+              altText: c?.value || product.name,
+              appliesTo: c ? [{ name: c.name, value: c.value }] : undefined,
+            });
+          }
         }
       }
       const images: (ImgSpec & { isPrimary: boolean; sortOrder: number })[] = [];
