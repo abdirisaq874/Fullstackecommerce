@@ -244,8 +244,12 @@ export function ProductDetail({ slug }: { slug: string }) {
     next();
   };
 
+  // No auth gate: a shopper arriving from an ad has no reason to create an
+  // account before putting something in a basket, and gating here also meant the
+  // Meta pixel never saw AddToCart. Guests get a Redis-backed cart keyed by
+  // X-Cart-Id, merged into their account if they sign in later.
   const handleAdd = (buyNow = false) =>
-    requireAuth(async () => {
+    (async () => {
       if (hasVariants && !selectedVariant) {
         toast.error('Please select an option');
         return;
@@ -269,7 +273,7 @@ export function ProductDetail({ slug }: { slug: string }) {
       } catch {
         toast.error('Could not add to cart');
       }
-    });
+    })();
 
   const handleAskSeller = () =>
     requireAuth(async () => {

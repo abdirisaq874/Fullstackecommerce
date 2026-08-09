@@ -10,6 +10,16 @@ import { RedisService } from '../shared/database/redis.service';
 import { roundMoney } from '../shared/utils/helpers';
 import { CouponService } from '../coupons/coupon.service';
 
+/**
+ * A guest (not-signed-in) cart, held in Redis under `cart:<cartId>` for
+ * `app.guestCartTtlDays`. Mirrors the persisted Cart shape so cart readers do
+ * not have to care whether the shopper has an account.
+ */
+interface GuestCart {
+  items: any[];
+  couponCode?: string;
+}
+
 @Injectable()
 export class CartService {
   private readonly guestCartTtl: number;
@@ -37,14 +47,33 @@ export class CartService {
       return this.refreshPrices(cart);
     }
 
-    // Guest cart from Redis
+    // Guest cart from Redis. Shaped like a Cart ({ items, couponCode }) so every
+    // downstream reader works against one shape regardless of who owns the cart.
     if (sessionId) {
-      const data = await this.redis.getJson<any>(`cart:${sessionId}`);
-      if (data) {
-        return data as any;
+      const cart = await this.readGuestCart(sessionId);
+      const { items, changed } = await this.revalidateItems(cart.items);
+      if (changed) {
+        cart.items = items;
+        await this.writeGuestCart(sessionId, cart);
       }
+      return { ...cart, items } as any;
     }
     return null;
+  }
+
+  /**
+   * Read a guest cart from Redis. Tolerates the legacy shape (a bare item array)
+   * written before guest carts carried a coupon, so carts already in Redis are
+   * not dropped on deploy.
+   */
+  private async readGuestCart(sessionId: string): Promise<GuestCart> {
+    const data = await this.redis.getJson<any>(`cart:${sessionId}`);
+    if (Array.isArray(data)) return { items: data, couponCode: undefined };
+    return { items: data?.items ?? [], couponCode: data?.couponCode ?? undefined };
+  }
+
+  private async writeGuestCart(sessionId: string, cart: GuestCart): Promise<void> {
+    await this.redis.setJson(`cart:${sessionId}`, cart, this.guestCartTtl);
   }
 
   async addItem(
@@ -125,25 +154,51 @@ export class CartService {
 
     // Guest cart → Redis
     if (sessionId) {
-      const existing = (await this.redis.getJson<any[]>(`cart:${sessionId}`)) || [];
-      const idx = existing.findIndex((i: any) => i.variantSku === effectiveSku);
+      const guest = await this.readGuestCart(sessionId);
+      const idx = guest.items.findIndex((i: any) => i.variantSku === effectiveSku);
       if (idx >= 0) {
-        existing[idx].quantity += quantity;
-        existing[idx].unitPrice = price;
+        // Stock was checked against `quantity` alone above; adding to an existing
+        // line must not push the total past what is actually available.
+        const merged = guest.items[idx].quantity + quantity;
+        if (available < merged) {
+          throw new BadRequestException(`Only ${available} items available`);
+        }
+        guest.items[idx].quantity = merged;
+        guest.items[idx].unitPrice = price;
       } else {
-        existing.push(cartItem);
+        guest.items.push(cartItem);
       }
-      await this.redis.setJson(`cart:${sessionId}`, existing, this.guestCartTtl);
+      await this.writeGuestCart(sessionId, guest);
     }
 
     return this.getCart(userId, sessionId) as any;
   }
 
   async updateItemQuantity(
-    userId: string,
+    userId: string | undefined,
+    sessionId: string | undefined,
     variantSku: string,
     quantity: number,
   ): Promise<CartDocument> {
+    if (!userId) {
+      if (!sessionId) throw new NotFoundException('Cart not found');
+      const guest = await this.readGuestCart(sessionId);
+      const item = guest.items.find((i: any) => i.variantSku === variantSku);
+      if (!item) throw new NotFoundException('Item not in cart');
+
+      if (quantity <= 0) {
+        guest.items = guest.items.filter((i: any) => i.variantSku !== variantSku);
+      } else {
+        const available = await this.availableFor(variantSku, item.productId?.toString());
+        if (available < quantity) {
+          throw new BadRequestException(`Only ${available} items available`);
+        }
+        item.quantity = quantity;
+      }
+      await this.writeGuestCart(sessionId, guest);
+      return this.getCart(undefined, sessionId) as any;
+    }
+
     const cart = await this.cartModel.findOne({ userId: new Types.ObjectId(userId) });
     if (!cart) throw new NotFoundException('Cart not found');
 
@@ -153,19 +208,7 @@ export class CartService {
     if (quantity <= 0) {
       cart.items = cart.items.filter((i) => i.variantSku !== variantSku) as any;
     } else {
-      // Simple products carry a `simple:<productId>` sentinel SKU and use
-      // product-level stock; variant products use SKU-level inventory.
-      let available: number;
-      if (variantSku.startsWith('simple:')) {
-        const product = await this.productModel.findById(variantSku.slice('simple:'.length));
-        available = product?.stock ?? 0;
-      } else {
-        available = await this.inventoryService.checkStock(variantSku, item.productId?.toString());
-        if (available <= 0) {
-          const product = await this.productModel.findById(item.productId);
-          available = product?.stock ?? 0;
-        }
-      }
+      const available = await this.availableFor(variantSku, item.productId?.toString());
       if (available < quantity) {
         throw new BadRequestException(`Only ${available} items available`);
       }
@@ -176,8 +219,29 @@ export class CartService {
     return cart;
   }
 
-  async removeItem(userId: string, variantSku: string): Promise<CartDocument> {
-    return this.updateItemQuantity(userId, variantSku, 0);
+  /**
+   * Stock available for a cart line. Simple products carry a
+   * `simple:<productId>` sentinel SKU and use product-level stock; variant
+   * products use SKU-level inventory, falling back to product stock when the
+   * SKU was never inventory-tracked (imported/seeded variants).
+   */
+  private async availableFor(variantSku: string, productId?: string): Promise<number> {
+    if (variantSku.startsWith('simple:')) {
+      const product = await this.productModel.findById(variantSku.slice('simple:'.length));
+      return product?.stock ?? 0;
+    }
+    const tracked = await this.inventoryService.checkStock(variantSku, productId);
+    if (tracked > 0) return tracked;
+    const product = productId ? await this.productModel.findById(productId) : null;
+    return product?.stock ?? 0;
+  }
+
+  async removeItem(
+    userId: string | undefined,
+    sessionId: string | undefined,
+    variantSku: string,
+  ): Promise<CartDocument> {
+    return this.updateItemQuantity(userId, sessionId, variantSku, 0);
   }
 
   async clearCart(userId: string, session?: import('mongoose').ClientSession): Promise<void> {
@@ -188,11 +252,24 @@ export class CartService {
     );
   }
 
-  async mergeGuestCart(userId: string, sessionId: string): Promise<void> {
-    const guestItems = await this.redis.getJson<any[]>(`cart:${sessionId}`);
-    if (!guestItems || guestItems.length === 0) return;
+  async clearGuestCart(sessionId: string): Promise<void> {
+    await this.redis.del(`cart:${sessionId}`);
+  }
 
-    for (const item of guestItems) {
+  /**
+   * Fold a guest cart into the user's cart at sign-in/sign-up, then drop the
+   * guest copy. Quantities add to any line the user already had. Items that can
+   * no longer be added (out of stock, product deactivated) are skipped rather
+   * than failing the login.
+   */
+  async mergeGuestCart(userId: string, sessionId: string): Promise<void> {
+    const guest = await this.readGuestCart(sessionId);
+    if (guest.items.length === 0) {
+      await this.redis.del(`cart:${sessionId}`);
+      return;
+    }
+
+    for (const item of guest.items) {
       try {
         await this.addItem(userId, undefined, item.productId, item.variantSku, item.quantity);
       } catch {
@@ -200,11 +277,19 @@ export class CartService {
       }
     }
 
+    // Carry the guest's coupon over only if the user's cart has none.
+    if (guest.couponCode) {
+      await this.cartModel.findOneAndUpdate(
+        { userId: new Types.ObjectId(userId), $or: [{ couponCode: null }, { couponCode: { $exists: false } }] },
+        { $set: { couponCode: guest.couponCode } },
+      );
+    }
+
     await this.redis.del(`cart:${sessionId}`);
   }
 
-  async getCartSummary(userId: string) {
-    const cart = await this.getCart(userId);
+  async getCartSummary(userId?: string, sessionId?: string) {
+    const cart = await this.getCart(userId, sessionId);
     if (!cart || cart.items.length === 0) {
       return { items: [], subtotal: 0, itemCount: 0, couponCode: undefined, discountAmount: 0 };
     }
@@ -270,24 +355,38 @@ export class CartService {
     };
   }
 
-  /** Validate + attach a coupon to the user's cart. Throws if the code is invalid. */
-  async applyCoupon(userId: string, code: string) {
-    const { subtotal } = await this.getCartSummary(userId);
+  /** Validate + attach a coupon to the cart. Throws if the code is invalid. */
+  async applyCoupon(userId: string | undefined, sessionId: string | undefined, code: string) {
+    const { subtotal } = await this.getCartSummary(userId, sessionId);
     if (subtotal <= 0) throw new BadRequestException('Your cart is empty');
     await this.couponService.validateForCart(code, subtotal); // throws BadRequest if invalid
-    await this.cartModel.findOneAndUpdate(
-      { userId: new Types.ObjectId(userId) },
-      { $set: { couponCode: code.trim().toUpperCase() } },
-    );
-    return this.getCartSummary(userId);
+    const normalized = code.trim().toUpperCase();
+
+    if (userId) {
+      await this.cartModel.findOneAndUpdate(
+        { userId: new Types.ObjectId(userId) },
+        { $set: { couponCode: normalized } },
+      );
+    } else if (sessionId) {
+      const guest = await this.readGuestCart(sessionId);
+      guest.couponCode = normalized;
+      await this.writeGuestCart(sessionId, guest);
+    }
+    return this.getCartSummary(userId, sessionId);
   }
 
-  async removeCoupon(userId: string) {
-    await this.cartModel.findOneAndUpdate(
-      { userId: new Types.ObjectId(userId) },
-      { $set: { couponCode: null } },
-    );
-    return this.getCartSummary(userId);
+  async removeCoupon(userId?: string, sessionId?: string) {
+    if (userId) {
+      await this.cartModel.findOneAndUpdate(
+        { userId: new Types.ObjectId(userId) },
+        { $set: { couponCode: null } },
+      );
+    } else if (sessionId) {
+      const guest = await this.readGuestCart(sessionId);
+      guest.couponCode = undefined;
+      await this.writeGuestCart(sessionId, guest);
+    }
+    return this.getCartSummary(userId, sessionId);
   }
 
   /**
@@ -295,23 +394,40 @@ export class CartService {
    * Uses a single batch query instead of N+1 per-item lookups.
    */
   private async refreshPrices(cart: CartDocument): Promise<CartDocument> {
-    if (cart.items.length === 0) return cart;
+    const { items, changed } = await this.revalidateItems(cart.items);
+    if (changed) {
+      cart.items = items as any;
+      await cart.save();
+    }
+    return cart;
+  }
+
+  /**
+   * Re-validate cart lines against current product data: drop items whose
+   * product/variant is gone or deactivated, and pull prices forward. Shared by
+   * the signed-in (Mongo) and guest (Redis) paths so a guest cart can't quietly
+   * hold a stale price on the way to checkout.
+   *
+   * Uses a single batch query instead of N+1 per-item lookups.
+   */
+  private async revalidateItems(items: any[]): Promise<{ items: any[]; changed: boolean }> {
+    if (!items || items.length === 0) return { items: items || [], changed: false };
 
     // Batch-fetch all products in one query
-    const productIds = [...new Set(cart.items.map((i) => i.productId.toString()))];
+    const productIds = [...new Set(items.map((i) => i.productId.toString()))];
     const products = await this.productModel.find({
       _id: { $in: productIds.map((id) => new Types.ObjectId(id)) },
     });
     const productMap = new Map(products.map((p) => [p._id.toString(), p]));
 
-    let updated = false;
-    const validItems = [];
+    let changed = false;
+    const validItems: any[] = [];
 
-    for (const item of cart.items) {
+    for (const item of items) {
       const product = productMap.get(item.productId.toString());
 
       if (!product || product.status !== 'active') {
-        updated = true;
+        changed = true;
         continue; // Remove stale items
       }
 
@@ -321,7 +437,7 @@ export class CartService {
       if (hasVariants) {
         const variant = product.variants.find((v) => v.sku === item.variantSku);
         if (!variant || !variant.isActive) {
-          updated = true;
+          changed = true;
           continue; // variant removed/disabled → drop stale line
         }
         currentPrice = variant.priceOverride || product.basePrice;
@@ -332,16 +448,11 @@ export class CartService {
 
       if (item.unitPrice !== currentPrice) {
         item.unitPrice = currentPrice;
-        updated = true;
+        changed = true;
       }
       validItems.push(item);
     }
 
-    if (updated) {
-      cart.items = validItems as any;
-      await cart.save();
-    }
-
-    return cart;
+    return { items: validItems, changed };
   }
 }

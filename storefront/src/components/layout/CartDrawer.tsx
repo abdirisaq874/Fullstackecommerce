@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { X, ShoppingBag, Trash2, Lock } from 'lucide-react';
+import { X, ShoppingBag, Trash2 } from 'lucide-react';
 import { formatPrice } from '@/lib/utils';
 import { Button, QtyStepper, EmptyState } from '@/components/ui';
 import { useAppDispatch, useAppSelector } from '@/store';
@@ -14,8 +14,9 @@ import {
 export function CartDrawer() {
   const dispatch = useAppDispatch();
   const open = useAppSelector((s) => s.ui.cartDrawerOpen);
-  const token = useAppSelector((s) => s.auth.accessToken);
-  const { data: cart, isLoading } = useGetCartQuery(undefined, { skip: !token });
+  // Guests have carts too — see Header. Skipping here left the drawer empty for
+  // exactly the shoppers we most want to convert.
+  const { data: cart, isLoading } = useGetCartQuery();
   const [updateItem] = useUpdateCartItemMutation();
   const [removeItem] = useRemoveCartItemMutation();
 
@@ -37,14 +38,7 @@ export function CartDrawer() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
-          {!token ? (
-            <EmptyState
-              icon={<Lock className="h-10 w-10" />}
-              title="Sign in to view your cart"
-              description="Your cart is saved to your account."
-              action={<Link href="/login"><Button>Sign in</Button></Link>}
-            />
-          ) : isLoading ? (
+          {isLoading ? (
             <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton h-20" />)}</div>
           ) : items.length === 0 ? (
             <EmptyState
@@ -79,7 +73,7 @@ export function CartDrawer() {
           )}
         </div>
 
-        {token && items.length > 0 && (
+        {items.length > 0 && (
           <div className="border-t border-line p-5">
             <div className="mb-3 flex items-center justify-between text-lg font-bold">
               <span>Subtotal</span>

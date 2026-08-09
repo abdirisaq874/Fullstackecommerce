@@ -15,6 +15,7 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { EventBusService } from '../shared/events/event-bus.service';
 import { RedisService } from '../shared/database/redis.service';
 import { OutboxService } from '../outbox/outbox.service';
+import { CartService } from '../cart/cart.service';
 import { EmailEventType } from '../shared/events/email-event.enum';
 import {
   RegisterDto,
@@ -87,9 +88,25 @@ export class AuthService {
     private eventBus: EventBusService,
     private redis: RedisService,
     private outbox: OutboxService,
+    private cartService: CartService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<AuthTokens> {
+  /**
+   * Fold a guest cart into the user's on sign-in/sign-up so a shopper who filled
+   * a cart before creating an account does not lose it — losing it there is the
+   * point at which carts get abandoned. Best-effort: a cart problem must never
+   * block authentication.
+   */
+  private async absorbGuestCart(userId: string, guestCartId?: string): Promise<void> {
+    if (!guestCartId) return;
+    try {
+      await this.cartService.mergeGuestCart(userId, guestCartId);
+    } catch (e) {
+      this.logger.warn(`guest cart merge failed: ${(e as Error).message}`);
+    }
+  }
+
+  async register(dto: RegisterDto, guestCartId?: string): Promise<AuthTokens> {
     const existing = await this.userModel.findOne({ email: dto.email.toLowerCase() });
     if (existing) {
       throw new ConflictException('Email already registered');
@@ -116,6 +133,8 @@ export class AuthService {
     } catch (e) {
       this.logger.warn(`verification email publish failed: ${(e as Error).message}`);
     }
+
+    await this.absorbGuestCart(user._id.toString(), guestCartId);
 
     return this.createSession(user);
   }
@@ -168,7 +187,7 @@ export class AuthService {
     return { message: 'If that account exists and is unverified, a verification email has been sent' };
   }
 
-  async login(dto: LoginDto): Promise<AuthTokens> {
+  async login(dto: LoginDto, guestCartId?: string): Promise<AuthTokens> {
     const user = await this.userModel
       .findOne({ email: dto.email.toLowerCase() })
       .select('+passwordHash');
@@ -193,6 +212,8 @@ export class AuthService {
       userId: user._id.toString(),
       email: user.email,
     });
+
+    await this.absorbGuestCart(user._id.toString(), guestCartId);
 
     return this.createSession(user);
   }

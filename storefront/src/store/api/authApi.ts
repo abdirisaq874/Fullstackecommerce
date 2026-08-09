@@ -1,5 +1,6 @@
 import { apiSlice } from './apiSlice';
 import { setCredentials, setUser, logout } from '@/store/slices/authSlice';
+import { clearCartId } from '@/lib/cart-id';
 import type { AuthTokens, User } from '@/types';
 
 interface LoginBody { email: string; password: string }
@@ -18,6 +19,11 @@ export const authApi = apiSlice.injectEndpoints({
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         const { data } = await queryFulfilled;
         dispatch(setCredentials(data));
+        // The request carried X-Cart-Id, so the backend has already folded the
+        // guest cart into this user's. Drop the local id (its Redis key is gone)
+        // and refetch so the merged cart replaces the guest one in the UI.
+        clearCartId();
+        dispatch(apiSlice.util.invalidateTags(['Cart']));
         dispatch(authApi.endpoints.me.initiate(undefined, { forceRefetch: true }));
       },
     }),
@@ -26,6 +32,11 @@ export const authApi = apiSlice.injectEndpoints({
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         const { data } = await queryFulfilled;
         dispatch(setCredentials(data));
+        // The request carried X-Cart-Id, so the backend has already folded the
+        // guest cart into this user's. Drop the local id (its Redis key is gone)
+        // and refetch so the merged cart replaces the guest one in the UI.
+        clearCartId();
+        dispatch(apiSlice.util.invalidateTags(['Cart']));
         dispatch(authApi.endpoints.me.initiate(undefined, { forceRefetch: true }));
       },
     }),

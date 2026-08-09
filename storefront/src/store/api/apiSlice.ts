@@ -3,6 +3,7 @@ import type { FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { API_URL } from '@/lib/utils';
 import type { RootState } from '@/store';
 import { setCredentials, logout } from '@/store/slices/authSlice';
+import { getCartId } from '@/lib/cart-id';
 import type { AuthTokens } from '@/types';
 
 const rawBaseQuery = fetchBaseQuery({
@@ -10,6 +11,11 @@ const rawBaseQuery = fetchBaseQuery({
   prepareHeaders: (headers, { getState }) => {
     const token = (getState() as RootState).auth.accessToken;
     if (token) headers.set('authorization', `Bearer ${token}`);
+    // Lets a signed-out shopper keep a cart, and tells /auth/login and
+    // /auth/register which guest cart to absorb. Ignored by the backend on every
+    // other route, and ignored outright once the request is authenticated.
+    const cartId = getCartId();
+    if (cartId) headers.set('X-Cart-Id', cartId);
     return headers;
   },
 });

@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import { CartModule } from '../cart/cart.module';
 
 @Module({
   imports: [
@@ -22,6 +23,8 @@ import { User, UserSchema } from '../users/schemas/user.schema';
       inject: [ConfigService],
     }),
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    // For folding a guest cart into the user's cart at sign-in/sign-up.
+    CartModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, LocalStrategy],

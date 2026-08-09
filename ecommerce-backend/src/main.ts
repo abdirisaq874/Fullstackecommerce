@@ -32,7 +32,7 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'stripe-signature', 'X-Request-Id', 'X-Store-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'stripe-signature', 'X-Request-Id', 'X-Store-Id', 'X-Cart-Id'],
   });
 
   // Global prefix

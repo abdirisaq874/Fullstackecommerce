@@ -7,6 +7,8 @@ import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { EventBusService } from '../shared/events/event-bus.service';
 import { RedisService } from '../shared/database/redis.service';
+import { OutboxService } from '../outbox/outbox.service';
+import { CartService } from '../cart/cart.service';
 import { User } from '../users/schemas/user.schema';
 
 describe('AuthService', () => {
@@ -48,14 +50,35 @@ describe('AuthService', () => {
     }),
   };
 
+  // Sessions are tracked in a Redis set per user, so the service reaches past the
+  // JSON helpers to the raw client.
+  const mockRedisClient = {
+    sadd: jest.fn().mockResolvedValue(1),
+    smembers: jest.fn().mockResolvedValue([]),
+    expire: jest.fn().mockResolvedValue(1),
+    set: jest.fn().mockResolvedValue('OK'),
+  };
+
   const mockRedisService = {
     setJson: jest.fn().mockResolvedValue(undefined),
     getJson: jest.fn().mockResolvedValue(null),
     del: jest.fn().mockResolvedValue(undefined),
+    getClient: jest.fn(() => mockRedisClient),
   };
 
   const mockEventBus = {
     emit: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockOutbox = {
+    publish: jest.fn().mockResolvedValue(undefined),
+    enqueue: jest.fn().mockResolvedValue(undefined),
+  };
+
+  // Login/register fold any guest cart into the user's; irrelevant to auth
+  // behaviour, so it is stubbed and asserted separately in cart.service.spec.
+  const mockCartService = {
+    mergeGuestCart: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -67,6 +90,8 @@ describe('AuthService', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: RedisService, useValue: mockRedisService },
         { provide: EventBusService, useValue: mockEventBus },
+        { provide: OutboxService, useValue: mockOutbox },
+        { provide: CartService, useValue: mockCartService },
       ],
     }).compile();
 

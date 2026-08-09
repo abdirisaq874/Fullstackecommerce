@@ -27,7 +27,9 @@ export function Header() {
   const wishCount = useAppSelector((s) => s.wishlist.items.length);
 
   const { data: categories } = useCategoryTreeQuery();
-  const { data: cart } = useGetCartQuery(undefined, { skip: !token });
+  // Not skipped for guests: signed-out shoppers have a cart too (keyed by
+  // X-Cart-Id), and the badge is how they know something landed in it.
+  const { data: cart } = useGetCartQuery();
   const [signOut] = useSignOutMutation();
 
   const [mobileOpen, setMobileOpen] = useState(false);
