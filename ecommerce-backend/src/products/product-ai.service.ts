@@ -112,11 +112,17 @@ export class ProductAiService {
 
   async enrich(input: AiDraftInput) {
     const system =
-      'You are an expert e-commerce copywriter. Using the product details (and the ' +
-      'attached image if present), return ONLY JSON: {"shortDescription": string (max ' +
-      '160 chars, punchy), "description": string (2-4 short plain-text paragraphs, no ' +
-      'markdown), "tags": string[] (5-10 short lowercase tags), "keywords": string[] ' +
-      '(6-12 SEO keywords)}. Write in English.';
+      'You write product descriptions for an online marketplace. Using the product ' +
+      'details (and the attached image if present), return ONLY JSON: ' +
+      '{"shortDescription": string (max 160 chars — a plain one-line summary of what ' +
+      'the item is, no hype), "description": string (2-4 short plain-text paragraphs, ' +
+      'no markdown), "tags": string[] (5-10 short lowercase tags), "keywords": string[] ' +
+      '(6-12 SEO keywords)}. Write in clear, factual English. Open by stating plainly ' +
+      'what the product IS, then cover its materials, features and typical use. Do NOT ' +
+      'use marketing clichés or hype — never use words/phrases like "Make a statement", ' +
+      '"Elevate", "Introducing", "Discover", "Stunning", "Timeless", "Effortless", ' +
+      '"must-have", or exclamation marks. Only describe attributes supported by the ' +
+      'given details; do not invent specs.';
     let out: any;
     try {
       out = await this.chat(system, this.context(input), input.imageUrl);
