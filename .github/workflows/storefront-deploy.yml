@@ -41,6 +41,7 @@ jobs:
             --build-arg NEXT_PUBLIC_META_PIXEL_ID="${{ vars.NEXT_PUBLIC_META_PIXEL_ID }}" \
             --build-arg NEXT_PUBLIC_OPENREPLAY_PROJECT_KEY="${{ vars.NEXT_PUBLIC_OPENREPLAY_PROJECT_KEY }}" \
             --build-arg NEXT_PUBLIC_OPENREPLAY_INGEST_POINT="${{ vars.NEXT_PUBLIC_OPENREPLAY_INGEST_POINT }}" \
+            --build-arg NEXT_PUBLIC_WHATSAPP_NUMBER="${{ vars.NEXT_PUBLIC_WHATSAPP_NUMBER }}" \
             -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" ./storefront
           docker push "$IMAGE:${{ github.sha }}"
           docker push "$IMAGE:latest"

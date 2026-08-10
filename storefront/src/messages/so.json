@@ -194,5 +194,11 @@
     "deliverTo": "Loo geeyo",
     "change": "Beddel",
     "items": "Alaabta"
+  },
+  "support": {
+    "whatsappCta": "Nala soo xiriir",
+    "whatsappAria": "Nala soo xiriir WhatsApp ku saabsan boggan",
+    "whatsappThisPage": "boggan",
+    "whatsappMessage": "Salaan! Su’aal ayaan qabaa ku saabsan:\n\n{title}\n{url}"
   }
 }

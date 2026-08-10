@@ -194,5 +194,11 @@
     "deliverTo": "Deliver to",
     "change": "Change",
     "items": "Items"
+  },
+  "support": {
+    "whatsappCta": "Chat with us",
+    "whatsappAria": "Chat with us on WhatsApp about this page",
+    "whatsappThisPage": "this page",
+    "whatsappMessage": "Hello! I have a question about:\n\n{title}\n{url}"
   }
 }
