@@ -97,7 +97,7 @@ export default function MessageThreadPage({ params }: { params: { id: string } }
                     ? 'bg-brand-100 text-brand-800'
                     : 'bg-stone-200 text-stone-700'
                 )}>
-                  {m.from === 'seller' ? 'AT' : thread.customer.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                  {m.from === 'seller' ? 'AT' : (thread.customer ?? '').split(' ').map(n => n[0]).slice(0, 2).join('')}
                 </div>
                 <div className={clsx(
                   'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
