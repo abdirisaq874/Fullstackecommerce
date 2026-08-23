@@ -81,7 +81,7 @@ export default function MessagesPage() {
                 )}
               >
                 <div className="w-10 h-10 rounded-full bg-stone-200 text-stone-700 grid place-items-center font-medium text-sm shrink-0">
-                  {t.customer.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                  {(t.customer ?? '').split(' ').map(n => n[0]).slice(0, 2).join('')}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2 mb-0.5">
